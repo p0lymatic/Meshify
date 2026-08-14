@@ -20,7 +20,16 @@ class MainActivity : ComponentActivity() {
         hasBluetoothPermission = result.values.all { it }
         if (hasBluetoothPermission) viewModelForPermissions?.toggleScan()
     }
+    private val locationPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        if (result[Manifest.permission.ACCESS_FINE_LOCATION] == true || result[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            locationPermissionCallback?.invoke()
+        }
+        locationPermissionCallback = null
+    }
     private var viewModelForPermissions: MeshifyViewModel? = null
+    private var locationPermissionCallback: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +55,20 @@ class MainActivity : ComponentActivity() {
                 onCloseChannel = viewModel::closeChannel,
                 onSendChannelMessage = viewModel::sendChannelMessage,
                 onAddChannel = viewModel::setChannel,
-                onThemeModeChanged = viewModel::setThemeMode,
+                onDeleteChannel = viewModel::deleteChannel,
+                onToggleChannelPinned = viewModel::toggleChannelPinned,
+                onMoveChannel = viewModel::moveChannel,
+                onSetChannelSort = viewModel::setChannelSort,
+                onSetTextCompression = viewModel::setTextCompression,
+                onMonetChanged = viewModel::setMonetEnabled,
+                onDarkModeChanged = viewModel::setDarkModeEnabled,
+                onLanguageChanged = viewModel::setLanguage,
+                onSetNodeName = viewModel::setNodeName,
+                onSendSelfAdvert = viewModel::sendSelfAdvert,
+                onSetRadioSettings = viewModel::setRadioSettings,
+                onRequestLocation = ::requestLocationPermission,
+                onSetContactSort = viewModel::setContactSort,
+                onSetChatSort = viewModel::setChatSort,
             )
         }
     }
@@ -54,10 +76,24 @@ class MainActivity : ComponentActivity() {
     private fun requestBluetoothPermissions() {
         permissions.launch(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                )
             } else {
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
             },
         )
+    }
+
+    private fun requestLocationPermission(onGranted: () -> Unit) {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            onGranted()
+            return
+        }
+        locationPermissionCallback = onGranted
+        locationPermissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 }

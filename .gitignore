@@ -1,19 +1,31 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file
 local.properties
+
+# Android Studio and IntelliJ files
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Build outputs and local artifacts
+*.aab
+*.apk
+output-metadata.json
+*.log
+*.hprof
+.DS_Store
+
+# Credentials
+*.jks
+*.keystore
+google-services.json
+
+# Local project material
 AGENT_HANDOFF.md
 HANDOFF.md
-*gradle*
-REFERENCES
+REFERENCES/

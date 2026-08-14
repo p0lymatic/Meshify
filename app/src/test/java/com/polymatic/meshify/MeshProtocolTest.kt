@@ -2,6 +2,8 @@ package com.polymatic.meshify
 
 import com.polymatic.meshify.mesh.MeshEvent
 import com.polymatic.meshify.mesh.MeshProtocol
+import com.polymatic.meshify.ui.screens.routeCountLabel
+import com.polymatic.meshify.ui.screens.routePathIdentifiers
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -34,6 +36,32 @@ class MeshProtocolTest {
             byteArrayOf(3, 0, 3, 0x78, 0x56, 0x34, 0x12, 'H'.code.toByte(), 'i'.code.toByte(), 0),
             frame,
         )
+    }
+
+    @Test
+    fun buildsNodeControlFramesUsingMeshCoreFormat() {
+        assertArrayEquals(
+            byteArrayOf(8, 'N'.code.toByte(), 'o'.code.toByte(), 'd'.code.toByte(), 'e'.code.toByte()),
+            MeshProtocol.setNodeName("Node"),
+        )
+        assertArrayEquals(byteArrayOf(7, 0), MeshProtocol.sendSelfAdvert(flood = false))
+        assertArrayEquals(byteArrayOf(7, 1), MeshProtocol.sendSelfAdvert(flood = true))
+    }
+
+    @Test
+    fun buildsRadioSettingsFramesUsingMeshCoreFormat() {
+        assertArrayEquals(
+            byteArrayOf(11, 0x70, 0xF6.toByte(), 0x36, 0x36, 0x48, 0xE8.toByte(), 0x01, 0, 9, 5),
+            MeshProtocol.setRadioParams(909_571_696, 125_000, 9, 5),
+        )
+        assertArrayEquals(byteArrayOf(12, 22), MeshProtocol.setRadioTxPower(22))
+    }
+
+    @Test
+    fun truncatesNodeNameAtMeshCoreUtf8Limit() {
+        val frame = MeshProtocol.setNodeName("x".repeat(MeshProtocol.maxNodeNameBytes + 4))
+        assertEquals(MeshProtocol.maxNodeNameBytes + 1, frame.size)
+        assertTrue(frame.drop(1).all { it == 'x'.code.toByte() })
     }
 
     @Test
@@ -79,6 +107,26 @@ class MeshProtocolTest {
     }
 
     @Test
+    fun displaysRouteCountAsHopsInsteadOfPathHash() {
+        assertEquals("1 реле", routeCountLabel(1))
+        assertEquals("3 реле", routeCountLabel(3))
+        assertEquals("flood", routeCountLabel(-1))
+    }
+
+    @Test
+    fun formatsPackedRouteAsRelayIdentifiers() {
+        assertEquals(
+            listOf("8131", "1191", "BAA3"),
+            routePathIdentifiers(
+                pathLength = 3,
+                pathBytes = byteArrayOf(0x81.toByte(), 0x31, 0x11, 0x91.toByte(), 0xBA.toByte(), 0xA3.toByte()),
+                hashWidth = 2,
+            ),
+        )
+        assertTrue(routePathIdentifiers(-1, byteArrayOf(0x12), 1).isEmpty())
+    }
+
+    @Test
     fun parsesV3ChannelPathAndSender() {
         val frame = byteArrayOf(
             MeshProtocol.responseChannelMsgRecvV3.toByte(),
@@ -104,6 +152,19 @@ class MeshProtocolTest {
         assertEquals(0x12345678, event.ackHash)
         assertEquals(845, event.tripTimeMs)
         assertTrue(event.tripTimeMs > 0)
+    }
+
+    @Test
+    fun computesFirmwareCompatibleDirectAckHash() {
+        // SHA-256([timestamp LE][attempt][text][sender public key]), first 4 bytes LE.
+        val hash = MeshProtocol.expectedDirectAckHash(
+            timestampSeconds = 1,
+            attempt = 0,
+            text = "hi",
+            senderPublicKey = "00".repeat(32),
+        )
+
+        assertEquals(0xEF09ED9D, hash)
     }
 
     private fun uint32(value: Long): ByteArray = ByteBuffer.allocate(4)

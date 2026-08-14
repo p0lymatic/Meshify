@@ -2,11 +2,20 @@ package com.polymatic.meshify.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -25,6 +34,10 @@ import androidx.compose.ui.unit.dp
 import com.polymatic.meshify.mesh.Contact
 import com.polymatic.meshify.mesh.Message
 import com.polymatic.meshify.mesh.MessageStatus
+import com.polymatic.meshify.mesh.MeshProtocol
+import com.polymatic.meshify.mesh.TextCompression
+import com.polymatic.meshify.mesh.TextCompressionMode
+import com.polymatic.meshify.ui.uiText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,6 +50,7 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit,
     onRetryMessage: (String) -> Unit,
     onBack: () -> Unit,
+    compressionMode: TextCompressionMode = TextCompressionMode.Off,
 ) {
     var inputText by rememberSaveable(contact.publicKey) { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -68,7 +82,7 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
                 },
             )
         },
@@ -94,7 +108,9 @@ fun ChatScreen(
             MessageComposer(
                 modifier = Modifier.imePadding().navigationBarsPadding(),
                 value = inputText,
-                placeholder = "Message ${contact.name}",
+                placeholder = uiText("Сообщение для ${contact.name}", "Message ${contact.name}"),
+                maxBytes = MeshProtocol.maxDirectMessageBytes,
+                compressionMode = compressionMode,
                 onValueChange = { inputText = it },
                 onSend = {
                     val text = inputText.trim()
@@ -109,9 +125,9 @@ fun ChatScreen(
 }
 
 private fun contactRouteLabel(hops: Int) = when {
-    hops < 0 -> "Flood route"
-    hops == 0 -> "Direct route"
-    else -> "$hops relay hops"
+    hops < 0 -> "Flood-маршрут"
+    hops == 0 -> "Прямой маршрут"
+    else -> "Реле: $hops"
 }
 
 @Composable
@@ -123,8 +139,8 @@ private fun EmptyMessageState(contact: Contact) {
     ) {
         Icon(Icons.Rounded.ChatBubbleOutline, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .6f))
         Spacer(Modifier.height(12.dp))
-        Text("No messages yet", style = MaterialTheme.typography.titleMedium)
-        Text("Start a conversation with ${contact.name}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(uiText("Сообщений пока нет", "No messages yet"), style = MaterialTheme.typography.titleMedium)
+        Text(uiText("Начните диалог с ${contact.name}", "Start a conversation with ${contact.name}"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -139,29 +155,37 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
         Surface(
             color = background,
-            tonalElevation = if (outgoing) 1.dp else 0.dp,
+            tonalElevation = if (outgoing) 2.dp else 1.dp,
             shape = messageBubbleShape(outgoing),
-            modifier = Modifier.widthIn(min = 76.dp, max = 328.dp).clickable { expanded = !expanded },
+            modifier = Modifier.widthIn(min = 76.dp, max = 328.dp)
+                .clickable { expanded = !expanded },
         ) {
             Column(Modifier.padding(start = 13.dp, end = 11.dp, top = 9.dp, bottom = 7.dp)) {
                 Text(message.text, style = MaterialTheme.typography.bodyLarge, color = foreground)
                 Spacer(Modifier.height(5.dp))
+                RoutePathSummary(
+                    pathLength = message.pathLength,
+                    pathBytes = message.pathBytes,
+                    hashWidth = null,
+                    tint = foreground,
+                    modifier = Modifier.align(Alignment.End),
+                )
                 Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    message.pathLength?.let {
-                        Icon(Icons.Rounded.Route, null, Modifier.size(13.dp), tint = foreground.copy(alpha = .62f))
-                        Text(routeCountLabel(it), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
-                    }
                     Text(formatTimestamp(message.timestamp), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
                     if (outgoing) {
                         MessageStatusIcon(message.status, foreground.copy(alpha = .75f))
                         if (message.status == MessageStatus.Failed) {
                             IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
-                                Icon(Icons.Rounded.Refresh, "Retry", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Rounded.Refresh, "Повторить", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
                 }
-                AnimatedVisibility(expanded) {
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(animationSpec = tween(190), expandFrom = Alignment.Top) + fadeIn(tween(140)),
+                    exit = shrinkVertically(animationSpec = tween(150), shrinkTowards = Alignment.Top) + fadeOut(tween(100)),
+                ) {
                     RouteDetails(
                         pathLength = message.pathLength,
                         pathBytes = message.pathBytes,
@@ -169,6 +193,12 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
                         repeats = 0,
                         snr = message.snr,
                         tripTimeMs = message.tripTimeMs,
+                        estimatedTimeoutMs = message.estimatedTimeoutMs,
+                        ackHash = message.ackHash,
+                        status = message.status,
+                        timestamp = message.timestamp,
+                        direction = if (outgoing) "Исходящее" else "Входящее",
+                        messageKind = "Личное сообщение",
                         relayNames = message.relayNames,
                         tint = foreground,
                     )
@@ -183,25 +213,123 @@ internal fun MessageComposer(
     modifier: Modifier = Modifier,
     value: String,
     placeholder: String,
+    maxBytes: Int = MeshProtocol.maxChannelMessageBytes,
+    compressionMode: TextCompressionMode = TextCompressionMode.Off,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
-    Surface(modifier = modifier, tonalElevation = 2.dp) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(placeholder) },
-                shape = RoundedCornerShape(22.dp),
-                maxLines = 4,
-            )
+    var showEmojiPicker by rememberSaveable { mutableStateOf(false) }
+    val encodedValue = remember(value, compressionMode) { TextCompression.encode(value.trim(), compressionMode) }
+    val usedBytes = encodedValue.encodeToByteArray().size
+    val availableBytes = maxBytes - usedBytes
+    val counterColor = when {
+        availableBytes < 0 -> MaterialTheme.colorScheme.error
+        availableBytes < 16 -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
+            FilledTonalIconButton(
+                onClick = { showEmojiPicker = true },
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+            ) {
+                Icon(Icons.Rounded.EmojiEmotions, uiText("Добавить emoji", "Add emoji"), Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(5.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (availableBytes >= 0) {
+                        uiText(
+                            "$usedBytes / $maxBytes байт · доступно $availableBytes",
+                            "$usedBytes / $maxBytes bytes · $availableBytes available",
+                        )
+                    } else {
+                        uiText(
+                            "$usedBytes / $maxBytes байт · превышение ${-availableBytes}",
+                            "$usedBytes / $maxBytes bytes · ${-availableBytes} over limit",
+                        )
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = counterColor,
+                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, bottom = 3.dp),
+                    maxLines = 1,
+                )
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(placeholder) },
+                    shape = RoundedCornerShape(26.dp),
+                    maxLines = 4,
+                )
+            }
             Spacer(Modifier.width(7.dp))
-            FilledIconButton(onClick = onSend, enabled = value.isNotBlank(), modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Rounded.Send, "Send")
+            FilledIconButton(
+                onClick = onSend,
+                enabled = value.isNotBlank() && availableBytes >= 0,
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.Send, "Отправить", Modifier.size(24.dp))
+            }
+        }
+    }
+    if (showEmojiPicker) {
+        EmojiPickerSheet(
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { emoji -> onValueChange(value + emoji); showEmojiPicker = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmojiPickerSheet(onDismiss: () -> Unit, onEmojiSelected: (String) -> Unit) {
+    val categories = listOf(
+        uiText("Смайлы", "Smileys") to listOf("😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😘", "😎", "🥳", "😢", "😭", "😡", "🤯", "😱", "🤔", "🤗", "🫡"),
+        uiText("Жесты", "Gestures") to listOf("👍", "👎", "👊", "✊", "🤝", "🙏", "👏", "🙌", "👋", "👌", "✌️", "💪", "🫶", "🤞", "🫡", "🤘"),
+        uiText("Сердца", "Hearts") to listOf("❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "💕", "💖", "💘", "💝", "💯", "💥"),
+        uiText("Предметы", "Objects") to listOf("🎉", "🎊", "🎁", "🏆", "⭐", "✨", "⚡", "🔥", "💡", "📷", "📱", "💻", "🎵", "🚀", "🌍", "☀️"),
+    )
+    var category by rememberSaveable { mutableIntStateOf(0) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 460.dp).padding(horizontal = 20.dp)) {
+            Text(uiText("Выберите emoji", "Choose an emoji"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                listOf("👍", "❤️", "😂", "🎉", "👏", "🔥").forEach { emoji ->
+                    FilledTonalIconButton(onClick = { onEmojiSelected(emoji) }, shape = RoundedCornerShape(14.dp)) {
+                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            ScrollableTabRow(selectedTabIndex = category, edgePadding = 0.dp) {
+                categories.forEachIndexed { index, item ->
+                    Tab(selected = category == index, onClick = { category = index }, text = { Text(item.first) })
+                }
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(8),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(vertical = 10.dp),
+            ) {
+                gridItems(categories[category].second) { emoji ->
+                    IconButton(onClick = { onEmojiSelected(emoji) }, modifier = Modifier.size(44.dp)) {
+                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
             }
         }
     }
@@ -215,66 +343,180 @@ internal fun RouteDetails(
     repeats: Int,
     snr: Float?,
     tripTimeMs: Long?,
+    estimatedTimeoutMs: Long? = null,
+    ackHash: Long? = null,
+    status: MessageStatus? = null,
+    timestamp: Long? = null,
+    direction: String? = null,
+    messageKind: String? = null,
     relayNames: List<String>,
     tint: Color,
 ) {
     HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 7.dp), color = tint.copy(alpha = .16f))
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(uiText("Информация о сообщении", "Message information"), style = MaterialTheme.typography.labelLarge, color = tint.copy(alpha = .9f))
+        messageKind?.let { MessageInfoRow(uiText("Тип", "Type"), it, tint) }
+        direction?.let { MessageInfoRow(uiText("Направление", "Direction"), it, tint) }
+        MessageInfoRow(
+            uiText("Маршрут", "Route"),
             when {
-                pathLength == null -> "Route information unavailable"
-                pathLength < 0 -> "Flood route"
-                pathLength == 0 -> "Direct radio path"
-                else -> "$pathLength relay ${if (pathLength == 1) "hop" else "hops"}"
+                pathLength == null -> uiText("нет данных", "unavailable")
+                pathLength < 0 -> uiText("flood-маршрут", "flood route")
+                pathLength == 0 -> uiText("прямое радио-соединение", "direct radio path")
+                else -> uiText("$pathLength ${russianHopLabel(pathLength)}", "$pathLength relay hops")
             },
-            style = MaterialTheme.typography.labelMedium,
-            color = tint.copy(alpha = .86f),
+            tint,
         )
-        if (repeats > 0) Text("Heard again by $repeats ${if (repeats == 1) "relay/path" else "relays/paths"}", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f))
-        pathLabels(pathBytes, hashWidth).takeIf { it.isNotEmpty() }?.let {
-            Text("Path: ${it.joinToString("  ->  ")}", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f))
+        if (pathLength != null && pathLength > 0) {
+            val routeBytes = pathBytes.size
+            val hashSize = hashWidth ?: if (routeBytes > 0) routeBytes / pathLength else 0
+            MessageInfoRow(
+                uiText("Данные маршрута", "Route data"),
+                if (hashSize > 0) uiText("$routeBytes байт, хеш реле $hashSize байт", "$routeBytes bytes, $hashSize-byte relay hash") else uiText("$routeBytes байт", "$routeBytes bytes"),
+                tint,
+            )
         }
-        if (relayNames.isNotEmpty()) Text("Relays: ${relayNames.joinToString("  ->  ")}", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f))
-        snr?.let { Text("SNR ${"%.1f".format(Locale.US, it)} dB", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f)) }
-        tripTimeMs?.let { Text("ACK in $it ms", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f)) }
+        routePathIdentifiers(pathLength, pathBytes, hashWidth).takeIf { it.isNotEmpty() }?.let {
+            MessageInfoRow(
+                uiText("Идентификаторы маршрута", "Route identifiers"),
+                it.joinToString(", "),
+                tint,
+            )
+        }
+        if (repeats > 0) MessageInfoRow(
+            uiText("Услышано реле", "Heard relays"),
+            uiText("$repeats ${russianHopLabel(repeats)}", if (repeats == 1) "1 relay" else "$repeats relays"),
+            tint,
+        )
+        relayNames.filterNot(::isRawRelayIdentifier).takeIf { it.isNotEmpty() }?.let {
+            MessageInfoRow(uiText("Реле (${it.size})", "Relays (${it.size})"), it.joinToString("  ->  "), tint)
+        }
+        if (pathLength != null && pathLength > 0 && relayNames.filterNot(::isRawRelayIdentifier).isEmpty()) {
+            MessageInfoRow(uiText("Реле", "Relays"), uiText("не удалось сопоставить с контактами", "could not match contacts"), tint)
+        }
+        snr?.let { MessageInfoRow(uiText("Качество сигнала", "Signal quality"), "${"%.1f".format(Locale.US, it)} dB SNR", tint) }
+        tripTimeMs?.let { MessageInfoRow(uiText("Подтверждение", "Acknowledgement"), uiText("получено за $it мс", "received in $it ms"), tint) }
+        estimatedTimeoutMs?.takeIf { tripTimeMs == null }?.let { MessageInfoRow(uiText("Подтверждение", "Acknowledgement"), uiText("ожидание до ${it / 1_000} с", "waiting up to ${it / 1_000}s"), tint) }
+        status?.let { MessageInfoRow(uiText("Статус", "Status"), messageStatusLabel(it), tint) }
+        timestamp?.let { MessageInfoRow(uiText("Время", "Time"), SimpleDateFormat("d MMMM, HH:mm:ss", if (uiText("ru", "en") == "ru") Locale("ru") else Locale.US).format(Date(it)), tint) }
+        ackHash?.let { MessageInfoRow(uiText("ID пакета", "Packet ID"), it.toString(16).uppercase(Locale.US), tint) }
     }
 }
 
-private fun pathLabels(bytes: ByteArray, width: Int?): List<String> {
-    if (bytes.isEmpty()) return emptyList()
-    val chunkSize = width?.takeIf { it in 1..4 } ?: 1
-    return bytes.asList().chunked(chunkSize).map { chunk -> chunk.joinToString("") { "%02X".format(it) } }
+@Composable
+private fun MessageInfoRow(label: String, value: String, tint: Color) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .64f))
+        Spacer(Modifier.width(16.dp))
+        Text(value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .82f))
+    }
+}
+
+private fun russianHopLabel(@Suppress("UNUSED_PARAMETER") count: Int): String = "реле"
+
+@Composable
+internal fun messageStatusLabel(status: MessageStatus): String = when (status) {
+    MessageStatus.Pending -> uiText("отправляется", "sending")
+    MessageStatus.Sent -> uiText("отправлено в сеть", "sent to network")
+    MessageStatus.Delivered -> uiText("доставлено", "delivered")
+    MessageStatus.Failed -> uiText("не доставлено", "not delivered")
+}
+
+private fun isRawRelayIdentifier(value: String): Boolean =
+    value.startsWith("Relay ") || value.matches(Regex("[0-9A-F]{2,}", RegexOption.IGNORE_CASE))
+
+/** Splits the packed route into the short hexadecimal relay identifiers shown by MeshCore. */
+internal fun routePathIdentifiers(pathLength: Int?, pathBytes: ByteArray, hashWidth: Int?): List<String> {
+    if (pathLength == null || pathLength <= 0 || pathBytes.isEmpty()) return emptyList()
+    val width = (hashWidth ?: (pathBytes.size / pathLength).takeIf { it > 0 } ?: 1).coerceIn(1, 4)
+    val count = minOf(pathLength, pathBytes.size / width)
+    return (0 until count).map { index ->
+        pathBytes.copyOfRange(index * width, (index + 1) * width)
+            .joinToString("") { byte -> "%02X".format(Locale.US, byte.toInt() and 0xFF) }
+    }
+}
+
+@Composable
+internal fun RoutePathSummary(
+    pathLength: Int?,
+    pathBytes: ByteArray,
+    hashWidth: Int?,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (pathLength == null) return
+    val identifiers = routePathIdentifiers(pathLength, pathBytes, hashWidth)
+    when {
+        pathLength < 0 -> Text(
+            uiText("flood-маршрут", "flood route"),
+            modifier = modifier,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint.copy(alpha = .68f),
+        )
+        pathLength == 0 -> Text(
+            uiText("Прямой маршрут", "Direct route"),
+            modifier = modifier,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint.copy(alpha = .68f),
+        )
+        else -> Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(Icons.Rounded.Route, null, Modifier.size(13.dp), tint = tint.copy(alpha = .62f))
+                Text(
+                    uiText("$pathLength ${hopWord(pathLength)}", "$pathLength ${if (pathLength == 1) "hop" else "hops"}"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint.copy(alpha = .68f),
+                )
+            }
+            if (identifiers.isNotEmpty()) {
+                Text(
+                    uiText("через ${identifiers.joinToString(",")}", "via ${identifiers.joinToString(",")}"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint.copy(alpha = .62f),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+private fun hopWord(count: Int): String = when {
+    count % 100 in 11..14 -> "хопов"
+    count % 10 == 1 -> "хоп"
+    count % 10 in 2..4 -> "хопа"
+    else -> "хопов"
 }
 
 private fun messageBubbleShape(outgoing: Boolean) = RoundedCornerShape(
-    topStart = 17.dp,
-    topEnd = 17.dp,
-    bottomStart = if (outgoing) 17.dp else 3.dp,
-    bottomEnd = if (outgoing) 3.dp else 17.dp,
+    topStart = if (outgoing) 24.dp else 12.dp,
+    topEnd = if (outgoing) 12.dp else 24.dp,
+    bottomStart = if (outgoing) 24.dp else 4.dp,
+    bottomEnd = if (outgoing) 4.dp else 24.dp,
 )
 
 @Composable
 private fun MessageStatusIcon(status: MessageStatus, tint: Color) {
     val (icon, description) = when (status) {
-        MessageStatus.Pending -> Icons.Rounded.Schedule to "Pending"
-        MessageStatus.Sent -> Icons.Rounded.Done to "Sent"
-        MessageStatus.Delivered -> Icons.Rounded.DoneAll to "Delivered"
-        MessageStatus.Failed -> Icons.Rounded.ErrorOutline to "Failed"
+        MessageStatus.Pending -> Icons.Rounded.Schedule to "Отправляется"
+        MessageStatus.Sent -> Icons.Rounded.Done to "Отправлено"
+        MessageStatus.Delivered -> Icons.Rounded.DoneAll to "Доставлено"
+        MessageStatus.Failed -> Icons.Rounded.ErrorOutline to "Не доставлено"
     }
     Icon(icon, description, Modifier.size(14.dp), tint = if (status == MessageStatus.Failed) MaterialTheme.colorScheme.error else tint)
 }
 
 internal fun routeCountLabel(pathLength: Int): String = when {
     pathLength < 0 -> "flood"
-    pathLength == 0 -> "direct"
-    else -> "${pathLength}h"
+    pathLength == 0 -> "напрямую"
+    else -> "$pathLength реле"
 }
 
 internal fun formatTimestamp(timestamp: Long): String {
     val diff = System.currentTimeMillis() - timestamp
     return when {
-        diff in 0..<60_000 -> "Now"
-        diff in 60_000..<3_600_000 -> "${diff / 60_000} min"
+        diff in 0..<60_000 -> "Сейчас"
+        diff in 60_000..<3_600_000 -> "${diff / 60_000} мин"
         diff in 0..<86_400_000 -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
         else -> SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(timestamp))
     }

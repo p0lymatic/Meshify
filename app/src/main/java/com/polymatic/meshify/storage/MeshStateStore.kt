@@ -100,9 +100,9 @@ class MeshStateStore(context: Context) {
         companion object { fun from(value: ChannelMessage) = ChannelMessageDto(value.messageId, value.text, value.timestamp, value.isOutgoing, value.status.name, value.senderName, value.channelIndex, value.repeatCount, value.pathLength, value.pathHashWidth, encode(value.pathBytes), value.pathVariants.map(::encode), value.snr, value.relayNames) }
     }
 
-    private data class ChannelDto(val index: Int = -1, val name: String = "", val psk: String = "") {
-        fun toModel(): Channel? = runCatching { Channel.fromHex(index, name, psk) }.getOrNull()
-        companion object { fun from(value: Channel) = ChannelDto(value.index, value.name, value.pskHex) }
+    private data class ChannelDto(val index: Int = -1, val name: String = "", val psk: String = "", val pinned: Boolean = false) {
+        fun toModel(): Channel? = runCatching { Channel.fromHex(index, name, psk).copy(pinned = pinned) }.getOrNull()
+        companion object { fun from(value: Channel) = ChannelDto(value.index, value.name, value.pskHex, value.pinned) }
     }
 
     private data class UnreadDto(val contacts: Map<String, Int> = emptyMap(), val channels: Map<String, Int> = emptyMap()) {

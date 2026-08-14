@@ -2,9 +2,14 @@ package com.polymatic.meshify.mesh
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 object MeshProtocol {
     const val maxFrameSize = 172
+    const val maxNodeNameBytes = 31
     const val maxDirectMessageBytes = 157
     const val maxChannelMessageBytes = 160
     const val cmdAppStart = 1
@@ -12,6 +17,10 @@ object MeshProtocol {
     const val cmdSendChannelTextMessage = 3
     const val cmdGetContacts = 4
     const val cmdSetDeviceTime = 6
+    const val cmdSendSelfAdvert = 7
+    const val cmdSetAdvertName = 8
+    const val cmdSetRadioParams = 11
+    const val cmdSetRadioTxPower = 12
     const val cmdSyncNextMessage = 10
     const val cmdGetBatteryAndStorage = 20
     const val cmdDeviceQuery = 22
@@ -33,6 +42,7 @@ object MeshProtocol {
     const val responseChannelInfo = 18
     const val pushSendConfirmed = 0x82
     const val pushMessageWaiting = 0x83
+    const val pushLogRxData = 0x88
 
     fun deviceQuery() = byteArrayOf(cmdDeviceQuery.toByte(), 4)
     fun getContacts() = byteArrayOf(cmdGetContacts.toByte())
@@ -43,6 +53,35 @@ object MeshProtocol {
 
     fun setTime(epochSeconds: Long): ByteArray = ByteBuffer.allocate(5)
         .order(ByteOrder.LITTLE_ENDIAN).put(cmdSetDeviceTime.toByte()).putInt(epochSeconds.toInt()).array()
+
+    /** MeshCore advert names are limited to 31 UTF-8 bytes. */
+    fun setNodeName(name: String): ByteArray {
+        val nameBytes = name.encodeToByteArray().take(maxNodeNameBytes).toByteArray()
+        return byteArrayOf(cmdSetAdvertName.toByte()) + nameBytes
+    }
+
+    /** Requests that the node sends its own advert, directly or flooded through the mesh. */
+    fun sendSelfAdvert(flood: Boolean): ByteArray =
+        byteArrayOf(cmdSendSelfAdvert.toByte(), if (flood) 1 else 0)
+
+    fun setRadioParams(frequencyHz: Int, bandwidthHz: Int, spreadingFactor: Int, codingRate: Int): ByteArray {
+        require(frequencyHz in 300_000_000..2_500_000_000) { "Frequency must be 300-2500 MHz" }
+        require(bandwidthHz in supportedBandwidthsHz) { "Unsupported LoRa bandwidth" }
+        require(spreadingFactor in 5..12) { "Spreading factor must be SF5-SF12" }
+        require(codingRate in 1..8) { "Unsupported coding rate" }
+        return ByteBuffer.allocate(11).order(ByteOrder.LITTLE_ENDIAN)
+            .put(cmdSetRadioParams.toByte())
+            .putInt(frequencyHz)
+            .putInt(bandwidthHz)
+            .put(spreadingFactor.toByte())
+            .put(codingRate.toByte())
+            .array()
+    }
+
+    fun setRadioTxPower(powerDbm: Int): ByteArray {
+        require(powerDbm in 0..127) { "TX power must fit in one signed byte" }
+        return byteArrayOf(cmdSetRadioTxPower.toByte(), powerDbm.toByte())
+    }
 
     fun sendChannelMessage(channelIndex: Int, text: String, timestampSeconds: Long = System.currentTimeMillis() / 1_000): ByteArray {
         if (channelIndex !in 0..7) throw IllegalArgumentException("channelIndex must be 0-7")
@@ -81,6 +120,66 @@ object MeshProtocol {
             uint32Le(timestampSeconds) + keyBytes.copyOfRange(0, 6) + textBytes + byteArrayOf(0)
     }
 
+    /** Computes the direct-message ACK hash emitted in RESP_CODE_SENT by MeshCore. */
+    fun expectedDirectAckHash(
+        timestampSeconds: Long,
+        attempt: Int,
+        text: String,
+        senderPublicKey: String,
+    ): Long? {
+        val keyBytes = senderPublicKey.hexToBytesOrNull() ?: return null
+        if (keyBytes.size != 32) return null
+        val textBytes = text.encodeToByteArray()
+        val input = ByteBuffer.allocate(5 + textBytes.size + keyBytes.size)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(timestampSeconds.toInt())
+            .put((attempt and 0x03).toByte())
+            .put(textBytes)
+            .put(keyBytes)
+            .array()
+        val digest = MessageDigest.getInstance("SHA-256").digest(input)
+        return (digest[0].toLong() and 0xFF) or
+            ((digest[1].toLong() and 0xFF) shl 8) or
+            ((digest[2].toLong() and 0xFF) shl 16) or
+            ((digest[3].toLong() and 0xFF) shl 24)
+    }
+
+    /**
+     * Decodes a channel packet carried by PUSH_CODE_LOG_RX_DATA. MeshCore uses these raw
+     * radio frames for repeated traffic, so they are required for "Heard N relays".
+     */
+    fun parseLogRxChannelMessage(frame: ByteArray, knownChannels: Collection<Channel>): ChannelMessage? {
+        if (frame.size < 4) return null
+        val packet = parseRawRadioPacket(frame.copyOfRange(3, frame.size)) ?: return null
+        if (packet.payloadType != payloadTypeGroupText || packet.payload.isEmpty()) return null
+        val channelHash = packet.payload[0].toInt() and 0xFF
+        val encrypted = packet.payload.copyOfRange(1, packet.payload.size)
+
+        for (channel in knownChannels) {
+            if (channel.isEmpty || channelHash(channel.psk) != channelHash) continue
+            val decrypted = decryptChannelPayload(channel.psk, encrypted) ?: continue
+            if (decrypted.size < 6) continue
+            val textType = decrypted[4].toInt() and 0xFF
+            if ((textType ushr 2) != 0) continue
+            val rawText = cString(decrypted, 5, decrypted.size - 5)
+            if (rawText.isBlank()) continue
+            val split = splitChannelSenderText(rawText)
+            return ChannelMessage(
+                messageId = "${uint32(decrypted, 0)}_ch${channel.index}_${split.second.hashCode()}",
+                text = split.second,
+                timestamp = uint32(decrypted, 0) * 1_000L,
+                isOutgoing = false,
+                status = MessageStatus.Delivered,
+                senderName = split.first,
+                channelIndex = channel.index,
+                pathLength = if (packet.isFlood) packet.hopCount else 0,
+                pathHashWidth = packet.pathHashWidth,
+                pathBytes = packet.pathBytes,
+            )
+        }
+        return null
+    }
+
     fun parse(frame: ByteArray): MeshEvent? {
         if (frame.isEmpty() || frame.size > maxFrameSize) return null
         return when (frame[0].toInt() and 0xFF) {
@@ -97,6 +196,7 @@ object MeshProtocol {
             responseSent -> parseSent(frame)
             pushSendConfirmed -> parseSendConfirmed(frame)
             pushMessageWaiting -> MeshEvent.MessagesWaiting
+            pushLogRxData -> MeshEvent.LogRxData(frame)
             else -> null
         }
     }
@@ -242,7 +342,20 @@ object MeshProtocol {
 
     private fun parseSelfInfo(frame: ByteArray): MeshEvent.NodeUpdated? {
         if (frame.size < 58) return null
-        return MeshEvent.NodeUpdated(NodeInfo(name = cString(frame, 58, frame.size - 58), publicKey = frame.copyOfRange(4, 36).joinToString("") { "%02X".format(it) }))
+        return MeshEvent.NodeUpdated(
+            NodeInfo(
+                name = cString(frame, 58, frame.size - 58),
+                publicKey = frame.copyOfRange(4, 36).joinToString("") { "%02X".format(it) },
+                txPowerDbm = frame[2].toInt(),
+                maxTxPowerDbm = frame[3].toInt(),
+                latitude = int32(frame, 36) / 1_000_000.0,
+                longitude = int32(frame, 40) / 1_000_000.0,
+                frequencyHz = uint32(frame, 48).toInt(),
+                bandwidthHz = uint32(frame, 52).toInt(),
+                spreadingFactor = frame[56].toInt() and 0xFF,
+                codingRate = frame[57].toInt() and 0xFF,
+            ),
+        )
     }
 
     private fun parseDeviceInfo(frame: ByteArray): MeshEvent.NodeUpdated? {
@@ -261,12 +374,94 @@ object MeshProtocol {
         val zero = (start until end).firstOrNull { bytes[it] == 0.toByte() } ?: end
         return bytes.copyOfRange(start, zero).decodeToString().trim()
     }
+
+    private data class RawRadioPacket(
+        val routeType: Int,
+        val payloadType: Int,
+        val pathLengthRaw: Int,
+        val pathBytes: ByteArray,
+        val payload: ByteArray,
+    ) {
+        val isFlood: Boolean get() = routeType == routeFlood || routeType == routeTransportFlood
+        val hopCount: Int get() = pathLengthRaw and 0x3F
+        val pathHashWidth: Int get() = ((pathLengthRaw ushr 6) and 0x03) + 1
+    }
+
+    private fun parseRawRadioPacket(raw: ByteArray): RawRadioPacket? = runCatching {
+        var cursor = 0
+        val header = raw[cursor++].toInt() and 0xFF
+        val routeType = header and packetRouteMask
+        if (routeType == routeTransportFlood || routeType == routeTransportDirect) cursor += 4
+        val pathLengthRaw = raw[cursor++].toInt() and 0xFF
+        val pathByteLength = if (pathLengthRaw == 0 || pathLengthRaw == 0xFF) 0
+        else (pathLengthRaw and 0x3F) * (((pathLengthRaw ushr 6) and 0x03) + 1)
+        require(cursor + pathByteLength <= raw.size)
+        val pathBytes = raw.copyOfRange(cursor, cursor + pathByteLength)
+        cursor += pathByteLength
+        RawRadioPacket(
+            routeType = routeType,
+            payloadType = (header ushr packetTypeShift) and packetTypeMask,
+            pathLengthRaw = pathLengthRaw,
+            pathBytes = pathBytes,
+            payload = raw.copyOfRange(cursor, raw.size),
+        )
+    }.getOrNull()
+
+    private fun channelHash(psk: ByteArray): Int =
+        MessageDigest.getInstance("SHA-256").digest(psk)[0].toInt() and 0xFF
+
+    private fun decryptChannelPayload(psk: ByteArray, encrypted: ByteArray): ByteArray? = runCatching {
+        if (encrypted.size <= channelCipherMacSize) return null
+        val mac = encrypted.copyOfRange(0, channelCipherMacSize)
+        val cipherText = encrypted.copyOfRange(channelCipherMacSize, encrypted.size)
+        if (cipherText.isEmpty() || cipherText.size % 16 != 0) return null
+        val hmacKey = ByteArray(32).also { psk.copyInto(it, endIndex = minOf(psk.size, it.size)) }
+        val expectedMac = Mac.getInstance("HmacSHA256").run {
+            init(SecretKeySpec(hmacKey, "HmacSHA256"))
+            doFinal(cipherText)
+        }
+        if (mac[0] != expectedMac[0] || mac[1] != expectedMac[1]) return null
+        val aesKey = ByteArray(16).also { psk.copyInto(it, endIndex = minOf(psk.size, it.size)) }
+        Cipher.getInstance("AES/ECB/NoPadding").run {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(aesKey, "AES"))
+            doFinal(cipherText)
+        }
+    }.getOrNull()
+
+    private fun splitChannelSenderText(rawText: String): Pair<String, String> {
+        val colon = rawText.indexOf(':')
+        if (colon !in 1 until minOf(50, rawText.length - 1)) return "Unknown" to rawText
+        val sender = rawText.substring(0, colon)
+        if (sender.any { it == ':' || it == '[' || it == ']' }) return "Unknown" to rawText
+        val textStart = if (rawText.getOrNull(colon + 1) == ' ') colon + 2 else colon + 1
+        return sender to rawText.substring(textStart)
+    }
+
     private fun ByteArray.toHex() = joinToString("") { "%02X".format(it) }
+    private fun String.hexToBytesOrNull(): ByteArray? {
+        if (length % 2 != 0) return null
+        return try {
+            ByteArray(length / 2) { index -> substring(index * 2, index * 2 + 2).toInt(16).toByte() }
+        } catch (_: NumberFormatException) {
+            null
+        }
+    }
     private fun uint16(b: ByteArray, at: Int) = (b[at].toInt() and 0xFF) or ((b[at + 1].toInt() and 0xFF) shl 8)
     private fun uint32Le(value: Long): ByteArray = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value.toInt()).array()
     private fun uint32(b: ByteArray, at: Int): Long = int32(b, at).toLong() and 0xFFFF_FFFFL
     private fun int32(b: ByteArray, at: Int): Int = ByteBuffer.wrap(b, at, 4).order(ByteOrder.LITTLE_ENDIAN).int
+
+    private const val packetRouteMask = 0x03
+    private const val packetTypeShift = 2
+    private const val packetTypeMask = 0x0F
+    private const val routeTransportFlood = 0x00
+    private const val routeFlood = 0x01
+    private const val routeTransportDirect = 0x03
+    private const val payloadTypeGroupText = 0x05
+    private const val channelCipherMacSize = 2
 }
+
+private val supportedBandwidthsHz = setOf(7_800, 10_400, 15_600, 20_800, 31_250, 41_700, 62_500, 125_000, 250_000, 500_000)
 
 private const val textTypePlain = 0
 data class Contact(
@@ -282,7 +477,21 @@ data class Contact(
     val pathHashWidth: Int = 1,
 )
 enum class ContactType(val label: String) { Chat("Chat"), Repeater("Repeater"), Room("Room"), Sensor("Sensor"); companion object { fun fromWire(value: Int) = entries.getOrElse(value - 1) { Chat } } }
-data class NodeInfo(val name: String? = null, val model: String? = null, val firmware: String? = null, val publicKey: String? = null, val batteryMv: Int? = null)
+data class NodeInfo(
+    val name: String? = null,
+    val model: String? = null,
+    val firmware: String? = null,
+    val publicKey: String? = null,
+    val batteryMv: Int? = null,
+    val txPowerDbm: Int? = null,
+    val maxTxPowerDbm: Int? = null,
+    val frequencyHz: Int? = null,
+    val bandwidthHz: Int? = null,
+    val spreadingFactor: Int? = null,
+    val codingRate: Int? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
 
 data class Message(
     val messageId: String,
@@ -323,6 +532,8 @@ data class Channel(
     val index: Int,
     val name: String,
     val psk: ByteArray,
+    /** App-only presentation metadata; it is not sent to the radio. */
+    val pinned: Boolean = false,
 ) {
     val pskHex: String get() = psk.joinToString("") { "%02x".format(it) }
     val isEmpty: Boolean get() = name.isEmpty() && psk.all { it == 0.toByte() }
@@ -339,13 +550,14 @@ data class Channel(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Channel) return false
-        return index == other.index && name == other.name && psk.contentEquals(other.psk)
+        return index == other.index && name == other.name && psk.contentEquals(other.psk) && pinned == other.pinned
     }
 
     override fun hashCode(): Int {
         var result = index
         result = 31 * result + name.hashCode()
         result = 31 * result + psk.contentHashCode()
+        result = 31 * result + pinned.hashCode()
         return result
     }
 }
@@ -364,6 +576,7 @@ sealed interface MeshEvent {
     data class MessageStatusUpdated(val messageId: String, val status: MessageStatus) : MeshEvent
     data class MessageSent(val isFlood: Boolean, val ackHash: Long, val estimatedTimeoutMs: Long) : MeshEvent
     data class MessageConfirmed(val ackHash: Long, val tripTimeMs: Long) : MeshEvent
+    data class LogRxData(val frame: ByteArray) : MeshEvent
     data class ChannelMessageReceived(val message: ChannelMessage) : MeshEvent
     data class ChannelUpdated(val channel: Channel) : MeshEvent
 }
