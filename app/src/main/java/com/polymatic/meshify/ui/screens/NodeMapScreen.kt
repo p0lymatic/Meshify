@@ -305,7 +305,7 @@ private fun OsmMap(
     )
 }
 
-/** Mirrors the reference project's OSM Dark preset without introducing another tile provider. */
+/** Mirrors MCOA's OSM Dark preset without introducing another tile provider. */
 private fun mapTileFilter(dark: Boolean): ColorFilter? = if (dark) {
     ColorMatrixColorFilter(
         ColorMatrix(

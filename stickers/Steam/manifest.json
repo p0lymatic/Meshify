@@ -1,0 +1,24 @@
+{
+  "type": "sticker",
+  "id": "steam",
+  "name": "Steam",
+  "version": 1,
+  "author": "Steam community",
+  "license": "Test assets; do not redistribute outside Meshify testing",
+  "description": "Built-in test sticker pack",
+  "cover": "happy.webp",
+  "items": [
+    {"id":"1","name":"Confused","keywords":["confused","steam"],"path":"confused.webp","mime":"image/webp","size":26098,"sha256":"b5deade45043ca80d46df03028ac0d7e42dcb045e045da08669c82421a2585ee"},
+    {"id":"2","name":"Facepalm","keywords":["facepalm","steam"],"path":"facepalm.webp","mime":"image/webp","size":19684,"sha256":"b266d2c31b6bf184b59ca358ada67c5b5fb07025ac8f35b7817e657d9e3a34db"},
+    {"id":"3","name":"Happy","keywords":["happy","smile","steam"],"path":"happy.webp","mime":"image/webp","size":20596,"sha256":"77d02fd2a357ea1f04a66e36d366e4817d4e3f22d13b809988fedd2a8d04769e"},
+    {"id":"4","name":"Hello","keywords":["hello","wave","steam"],"path":"hello.webp","mime":"image/webp","size":29174,"sha256":"8608a18529242c5956a342d219a1fe28ba565102871d7cd5f42994f3d4a9c849"},
+    {"id":"5","name":"LOL","keywords":["lol","laugh","steam"],"path":"lol.webp","mime":"image/webp","size":29796,"sha256":"11d4957e5bb5c5429e0bedf54d5721a6e68e1dd39b7b398f64f45e838a7c1285"},
+    {"id":"6","name":"Love","keywords":["love","heart","steam"],"path":"love.webp","mime":"image/webp","size":15658,"sha256":"f97745d4f68d3e119bd04e810078f9b1ed8e4f4558c1e3f517fe3a37966c5148"},
+    {"id":"7","name":"Mocking","keywords":["mocking","steam"],"path":"mocking.webp","mime":"image/webp","size":22032,"sha256":"ff5c4e8f3a550f96e12dfed396d77e48e98df1c79576a3a5a504e6e56158214c"},
+    {"id":"8","name":"Sad","keywords":["sad","steam"],"path":"sad.webp","mime":"image/webp","size":19976,"sha256":"26a00dc9302f9104ea25f4e53956259e3cc80d2acd23349f11230d13f2d8ced5"},
+    {"id":"9","name":"Sadder","keywords":["sadder","cry","steam"],"path":"sadder.webp","mime":"image/webp","size":35710,"sha256":"61dc0cb16e6560f3443acaf8ea08a0b5ae3ba56876afccbede025a5690c55d07"},
+    {"id":"10","name":"Sleepy","keywords":["sleepy","sleep","steam"],"path":"sleepy.webp","mime":"image/webp","size":39070,"sha256":"e986008ccdd97ee06b0ed507953c74358f4dbc29263719c32f94fabc6d1f0cdf"},
+    {"id":"11","name":"Sunglasses","keywords":["cool","sunglasses","steam"],"path":"sunglasses.webp","mime":"image/webp","size":29740,"sha256":"9bedb2d603e2f192b06177313e5f8c138019fdbedd5454d0d1b6a1e3889656cb"},
+    {"id":"12","name":"Tomato","keywords":["tomato","angry","steam"],"path":"tomato.webp","mime":"image/webp","size":29076,"sha256":"b78c5f112a316264fdcebd77131c8aa280c3a970d4f96dc7a11ee0a3c69ff7f6"}
+  ]
+}

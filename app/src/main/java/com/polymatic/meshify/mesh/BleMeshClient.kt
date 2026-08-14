@@ -89,7 +89,7 @@ class BleMeshClient(private val context: Context, private val onFrame: (ByteArra
 
     /**
      * Sorts discovered devices: MeshCore-identified first (NUS or known name prefix), then by RSSI.
-     * Matches meshcore-open's approach where NUS-advertising devices are shown prominently.
+     * Matches MCOA's approach where NUS-advertising devices are shown prominently.
      */
     private fun publishDeviceList() {
         _devices.value = found.values.sortedWith(
@@ -191,7 +191,7 @@ class BleMeshClient(private val context: Context, private val onFrame: (ByteArra
 
     /**
      * Toggle scan: starts if idle, stops if already scanning.
-     * Mirrors meshcore-open's _toggleScan() pattern.
+     * Mirrors MCOA's _toggleScan() pattern.
      */
     @SuppressLint("MissingPermission") fun toggleScan() {
         if (scanActive || _state.value is BleState.Scanning) stopScanAndIdle("user toggled off")
@@ -199,7 +199,7 @@ class BleMeshClient(private val context: Context, private val onFrame: (ByteArra
     }
 
     /**
-     * Start BLE scan. Uses the same strategy as meshcore-open:
+     * Start BLE scan. Uses the same strategy as MCOA:
      *
      * The scan runs **unfiltered** so that Heltec and other boards whose firmware does not advertise
      * the NUS service UUID still appear. Each advertisement is checked for:
@@ -224,9 +224,9 @@ class BleMeshClient(private val context: Context, private val onFrame: (ByteArra
         handler.postDelayed({
             try {
                 scanner?.startScan(
-                    null, // No service filter — same reasoning as meshcore-open for Heltec compatibility.
+                    null, // No service filter — same reasoning as MCOA for Heltec compatibility.
                     ScanSettings.Builder()
-                        .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // matches meshcore-open's androidScanMode.lowLatency
+                        .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // matches MCOA's androidScanMode.lowLatency
                         .build(),
                     scanCallback,
                 )
@@ -338,7 +338,7 @@ class BleMeshClient(private val context: Context, private val onFrame: (ByteArra
 
         /**
          * Known advertised-name prefixes used by stock MeshCore firmware builds.
-         * Sourced from meshcore-open's [MeshCoreUuids.deviceNamePrefixes].
+         * Sourced from MCOA's [MeshCoreUuids.deviceNamePrefixes].
          */
         private val KNOWN_NAME_PREFIXES = listOf(
             "MeshCore-",

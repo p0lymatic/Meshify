@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "packs": [
+    {
+      "type": "sticker",
+      "id": "steam",
+      "name": "Steam",
+      "version": 1,
+      "manifest": "stickers/Steam/manifest.json",
+      "manifestSha256": "c382301d9b2c16c314301dd1cbe6c71c14f368f1d2631a6d49103dd57962cb43",
+      "size": 319243,
+      "cover": "happy.webp"
+    }
+  ]
+}

@@ -125,6 +125,7 @@ private fun EmptyChannelState(channel: Channel) {
 private fun ChannelMessageBubble(message: ChannelMessage) {
     var expanded by remember(message.messageId) { mutableStateOf(false) }
     val outgoing = message.isOutgoing
+    val stickerOnly = isStandaloneBuiltInSticker(message.text)
     val background = if (outgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
     val foreground = if (outgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
 
@@ -138,15 +139,16 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
                 bottomStart = if (outgoing) 24.dp else 4.dp,
                 bottomEnd = if (outgoing) 4.dp else 24.dp,
             ),
-            modifier = Modifier.widthIn(min = 88.dp, max = 328.dp)
+            modifier = Modifier.widthIn(min = if (stickerOnly) 0.dp else 88.dp, max = 328.dp)
                 .clickable { expanded = !expanded },
         ) {
-            Column(Modifier.padding(start = 13.dp, end = 11.dp, top = 8.dp, bottom = 7.dp)) {
-                if (!outgoing && message.senderName.isNotBlank()) {
+            Column(Modifier.padding(start = if (stickerOnly) 4.dp else 13.dp, end = if (stickerOnly) 4.dp else 11.dp, top = if (stickerOnly) 4.dp else 8.dp, bottom = if (stickerOnly) 4.dp else 7.dp)) {
+                if (!stickerOnly && !outgoing && message.senderName.isNotBlank()) {
                     Text(message.senderName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(2.dp))
                 }
-                Text(message.text, style = MaterialTheme.typography.bodyLarge, color = foreground)
+                MediaMessageContent(message.text, foreground)
+                if (!stickerOnly) {
                 Spacer(Modifier.height(5.dp))
                 RoutePathSummary(
                     pathLength = message.pathLength,
@@ -187,6 +189,18 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
                         tint = foreground,
                     )
                 }
+                }
+            }
+        }
+        if (stickerOnly) {
+            if (!outgoing && message.senderName.isNotBlank()) Text(message.senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (message.repeatCount > 0) {
+                    Icon(Icons.Rounded.CellTower, null, Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(heardRelaysLabel(message.repeatCount), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(formatTimestamp(message.timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (outgoing) ChannelStatusIcon(message.status, MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

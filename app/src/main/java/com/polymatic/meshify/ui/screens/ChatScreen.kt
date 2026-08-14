@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,8 +32,9 @@ import com.polymatic.meshify.mesh.Contact
 import com.polymatic.meshify.mesh.Message
 import com.polymatic.meshify.mesh.MessageStatus
 import com.polymatic.meshify.mesh.MeshProtocol
-import com.polymatic.meshify.mesh.TextCompression
 import com.polymatic.meshify.mesh.TextCompressionMode
+import com.polymatic.meshify.mesh.OutgoingText
+import com.polymatic.meshify.media.BuiltInStickers
 import com.polymatic.meshify.ui.uiText
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -149,6 +147,7 @@ private fun EmptyMessageState(contact: Contact) {
 private fun MessageBubble(message: Message, onRetry: () -> Unit) {
     var expanded by remember(message.messageId) { mutableStateOf(false) }
     val outgoing = message.isOutgoing
+    val stickerOnly = isStandaloneBuiltInSticker(message.text)
     val background = if (outgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
     val foreground = if (outgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
 
@@ -157,11 +156,12 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
             color = background,
             tonalElevation = if (outgoing) 2.dp else 1.dp,
             shape = messageBubbleShape(outgoing),
-            modifier = Modifier.widthIn(min = 76.dp, max = 328.dp)
+            modifier = Modifier.widthIn(min = if (stickerOnly) 0.dp else 76.dp, max = 328.dp)
                 .clickable { expanded = !expanded },
         ) {
-            Column(Modifier.padding(start = 13.dp, end = 11.dp, top = 9.dp, bottom = 7.dp)) {
-                Text(message.text, style = MaterialTheme.typography.bodyLarge, color = foreground)
+            Column(Modifier.padding(if (stickerOnly) 4.dp else 0.dp).padding(start = if (stickerOnly) 0.dp else 13.dp, end = if (stickerOnly) 0.dp else 11.dp, top = if (stickerOnly) 0.dp else 9.dp, bottom = if (stickerOnly) 0.dp else 7.dp)) {
+                MediaMessageContent(message.text, foreground)
+                if (!stickerOnly) {
                 Spacer(Modifier.height(5.dp))
                 RoutePathSummary(
                     pathLength = message.pathLength,
@@ -203,6 +203,16 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
                         tint = foreground,
                     )
                 }
+                }
+            }
+        }
+        if (stickerOnly) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(formatTimestamp(message.timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (outgoing) MessageStatusIcon(message.status, MaterialTheme.colorScheme.onSurfaceVariant)
+                if (outgoing && message.status == MessageStatus.Failed) IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Rounded.Refresh, "Повторить", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
@@ -218,8 +228,8 @@ internal fun MessageComposer(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
-    var showEmojiPicker by rememberSaveable { mutableStateOf(false) }
-    val encodedValue = remember(value, compressionMode) { TextCompression.encode(value.trim(), compressionMode) }
+    var showStickerPicker by rememberSaveable { mutableStateOf(false) }
+    val encodedValue = remember(value, compressionMode) { OutgoingText.prepare(value.trim(), compressionMode) }
     val usedBytes = encodedValue.encodeToByteArray().size
     val availableBytes = maxBytes - usedBytes
     val counterColor = when {
@@ -235,11 +245,11 @@ internal fun MessageComposer(
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
             FilledTonalIconButton(
-                onClick = { showEmojiPicker = true },
+                onClick = { showStickerPicker = true },
                 modifier = Modifier.size(48.dp),
                 shape = CircleShape,
             ) {
-                Icon(Icons.Rounded.EmojiEmotions, uiText("Добавить emoji", "Add emoji"), Modifier.size(22.dp))
+                Icon(Icons.Rounded.StickyNote2, uiText("Выбрать стикер", "Choose sticker"), Modifier.size(22.dp))
             }
             Spacer(Modifier.width(5.dp))
             Column(Modifier.weight(1f)) {
@@ -285,50 +295,40 @@ internal fun MessageComposer(
             }
         }
     }
-    if (showEmojiPicker) {
-        EmojiPickerSheet(
-            onDismiss = { showEmojiPicker = false },
-            onEmojiSelected = { emoji -> onValueChange(value + emoji); showEmojiPicker = false },
+    if (showStickerPicker) {
+        StickerPickerSheet(
+            onDismiss = { showStickerPicker = false },
+            onStickerSelected = { wireText -> onValueChange(value + wireText); showStickerPicker = false },
         )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmojiPickerSheet(onDismiss: () -> Unit, onEmojiSelected: (String) -> Unit) {
-    val categories = listOf(
-        uiText("Смайлы", "Smileys") to listOf("😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😘", "😎", "🥳", "😢", "😭", "😡", "🤯", "😱", "🤔", "🤗", "🫡"),
-        uiText("Жесты", "Gestures") to listOf("👍", "👎", "👊", "✊", "🤝", "🙏", "👏", "🙌", "👋", "👌", "✌️", "💪", "🫶", "🤞", "🫡", "🤘"),
-        uiText("Сердца", "Hearts") to listOf("❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "💕", "💖", "💘", "💝", "💯", "💥"),
-        uiText("Предметы", "Objects") to listOf("🎉", "🎊", "🎁", "🏆", "⭐", "✨", "⚡", "🔥", "💡", "📷", "📱", "💻", "🎵", "🚀", "🌍", "☀️"),
-    )
-    var category by rememberSaveable { mutableIntStateOf(0) }
+private fun StickerPickerSheet(onDismiss: () -> Unit, onStickerSelected: (String) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val stickers = remember(query) {
+        val needle = query.trim().lowercase()
+        BuiltInStickers.items.filter { sticker -> needle.isEmpty() || listOf(BuiltInStickers.packName, BuiltInStickers.packId, sticker.name, sticker.id, *sticker.keywords.toTypedArray()).any { it.lowercase().contains(needle) } }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().heightIn(max = 460.dp).padding(horizontal = 20.dp)) {
-            Text(uiText("Выберите emoji", "Choose an emoji"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(horizontal = 20.dp)) {
+            Text(uiText("Стикеры", "Stickers"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                listOf("👍", "❤️", "😂", "🎉", "👏", "🔥").forEach { emoji ->
-                    FilledTonalIconButton(onClick = { onEmojiSelected(emoji) }, shape = RoundedCornerShape(14.dp)) {
-                        Text(emoji, style = MaterialTheme.typography.titleLarge)
-                    }
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            ScrollableTabRow(selectedTabIndex = category, edgePadding = 0.dp) {
-                categories.forEachIndexed { index, item ->
-                    Tab(selected = category == index, onClick = { category = index }, text = { Text(item.first) })
-                }
-            }
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(8),
+            OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Rounded.Search, null) }, placeholder = { Text(uiText("Поиск по наборам и стикерам", "Search packs and stickers")) })
+            Spacer(Modifier.height(10.dp))
+            Text(BuiltInStickers.packName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(vertical = 10.dp),
             ) {
-                gridItems(categories[category].second) { emoji ->
-                    IconButton(onClick = { onEmojiSelected(emoji) }, modifier = Modifier.size(44.dp)) {
-                        Text(emoji, style = MaterialTheme.typography.titleLarge)
-                    }
+                items(stickers, key = { it.id }) { sticker ->
+                    ListItem(
+                        headlineContent = { Text(sticker.name) },
+                        supportingContent = { Text(sticker.wireText) },
+                        leadingContent = { BuiltInStickerImage(sticker, Modifier.size(46.dp)) },
+                        modifier = Modifier.clickable { onStickerSelected(sticker.wireText) },
+                    )
                 }
             }
         }

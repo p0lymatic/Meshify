@@ -14,7 +14,7 @@ object TextCompression {
         'а' to 'a', 'с' to 'c', 'е' to 'e', 'о' to 'o', 'р' to 'p', 'х' to 'x', 'у' to 'y',
     )
 
-    // The map used by meshcore-open's Cyr2Lat helper.
+    // The map used by MCOA's Cyr2Lat helper.
     private val meshCoreOpenMap = mapOf(
         'А' to 'A', 'В' to 'B', 'Е' to 'E', 'Ё' to 'E', 'З' to '3', 'К' to 'K',
         'М' to 'M', 'Н' to 'H', 'О' to 'O', 'Р' to 'P', 'С' to 'C', 'Т' to 'T',
@@ -24,7 +24,7 @@ object TextCompression {
 
     /**
      * Applies a compatibility substitution. Structured MeshCore payloads are intentionally
-     * left untouched, matching meshcore-open's compression exclusions.
+     * left untouched, matching MCOA's compression exclusions.
      */
     fun encode(text: String, mode: TextCompressionMode): String {
         if (mode == TextCompressionMode.Off || text.isEmpty()) return text

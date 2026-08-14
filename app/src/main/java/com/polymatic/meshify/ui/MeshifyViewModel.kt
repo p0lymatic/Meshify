@@ -280,7 +280,7 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun sendMessage(recipientKey: String, text: String) {
-        val outboundText = TextCompression.encode(text, _state.value.clientSpecific.textCompression)
+        val outboundText = OutgoingText.prepare(text, _state.value.clientSpecific.textCompression)
         if (outboundText.encodeToByteArray().size > MeshProtocol.maxDirectMessageBytes) {
             BleDebugLog.add("Direct message rejected: exceeds ${MeshProtocol.maxDirectMessageBytes} UTF-8 bytes")
             return
@@ -301,7 +301,7 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun sendChannelMessage(channelIndex: Int, text: String) {
-        val outboundText = TextCompression.encode(text, _state.value.clientSpecific.textCompression)
+        val outboundText = OutgoingText.prepare(text, _state.value.clientSpecific.textCompression)
         if (outboundText.encodeToByteArray().size > MeshProtocol.maxChannelMessageBytes) {
             BleDebugLog.add("Channel message rejected: exceeds ${MeshProtocol.maxChannelMessageBytes} UTF-8 bytes")
             return
@@ -727,7 +727,7 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    /** Mirrors meshcore-open's retry service: one active send per contact, max six globally. */
+    /** Mirrors MCOA's retry service: one active send per contact, max six globally. */
     private fun enqueueDirectTransmission(contactKey: String, message: Message) {
         directSendQueues.getOrPut(contactKey) { ArrayDeque() }
             .addLast(DirectTransmission(contactKey, message.messageId, message))
@@ -896,7 +896,7 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
             snr = enriched.snr ?: existing.snr,
             relayNames = (existing.relayNames + enriched.relayNames).distinct(),
         )
-        // The reference client removes an echoed channel message from the send-response
+        // MCOA removes an echoed channel message from the send-response
         // queue. Otherwise its later RESP_CODE_SENT would consume the next message's slot.
         if (promotedFromPending) {
             pendingChannelTransmissions.removeAll { it.messageId == existing.messageId }
@@ -916,7 +916,7 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
         publishChannelMessages()
     }
 
-    /** Mirrors the reference client: a local broadcast is not a relay reception. */
+    /** Mirrors MCOA: a local broadcast is not a relay reception. */
     private fun isDirectSelfChannelEcho(message: ChannelMessage): Boolean {
         val selfName = _state.value.node.name?.trim().orEmpty()
         val hasRoute = message.pathBytes.isNotEmpty() || (message.pathLength != null && message.pathLength != 0)

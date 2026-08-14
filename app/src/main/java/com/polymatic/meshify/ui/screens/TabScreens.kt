@@ -557,12 +557,12 @@ private fun ClientSpecificCard(mode: TextCompressionMode, onModeChanged: (TextCo
                 val title = when (option) {
                     TextCompressionMode.Off -> uiText("Выключено", "Off")
                     TextCompressionMode.SimilarLatin -> uiText("Meshify: похожие буквы", "Meshify: look-alike letters")
-                    TextCompressionMode.MeshCoreOpen -> uiText("MeshCore Open: Cyr2Lat", "MeshCore Open: Cyr2Lat")
+                    TextCompressionMode.MeshCoreOpen -> uiText("MCOA: Cyr2Lat", "MCOA: Cyr2Lat")
                 }
                 val subtitle = when (option) {
                     TextCompressionMode.Off -> uiText("Отправлять исходный текст", "Send original text")
                     TextCompressionMode.SimilarLatin -> uiText("Совместимая замена базового набора букв", "Compatible replacement using the base character set")
-                    TextCompressionMode.MeshCoreOpen -> uiText("Имитировать карту Cyr2Lat из референсного клиента", "Match the reference client's Cyr2Lat map")
+                    TextCompressionMode.MeshCoreOpen -> uiText("Использовать карту Cyr2Lat MCOA", "Use the MCOA Cyr2Lat map")
                 }
                 ListItem(
                     headlineContent = { Text(title) },
