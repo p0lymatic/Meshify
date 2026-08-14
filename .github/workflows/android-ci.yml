@@ -61,3 +61,30 @@ jobs:
         with:
           name: meshify-media-catalog
           path: catalog.json
+
+  release:
+    name: Publish debug APK release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: meshify-debug-apk
+          path: release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: apk-${{ github.run_number }}
+        run: |
+          mv release/app-debug.apk release/Meshify-debug-${TAG}.apk
+          gh release create "$TAG" release/Meshify-debug-${TAG}.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Meshify debug APK ${TAG#apk-}" \
+            --generate-notes
