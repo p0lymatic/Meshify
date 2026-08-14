@@ -19,12 +19,10 @@ import org.json.JSONObject
 
 data class RecentMac(val address: String, val name: String, val timestamp: Long)
 
-enum class AppThemeMode(val label: String) {
-    System("System"),
-    Light("Light"),
-    Dark("Dark"),
-    Monet("Monet"),
-}
+data class AppThemeSettings(
+    val useMonet: Boolean = false,
+    val darkMode: Boolean = false,
+)
 
 data class MeshUiState(
     val connection: BleState = BleState.Idle,
@@ -42,7 +40,7 @@ data class MeshUiState(
     val channelMessages: Map<Int, List<ChannelMessage>> = emptyMap(),
     val contactUnread: Map<String, Int> = emptyMap(),
     val channelUnread: Map<Int, Int> = emptyMap(),
-    val themeMode: AppThemeMode = AppThemeMode.System,
+    val theme: AppThemeSettings = AppThemeSettings(),
 )
 
 // ── ViewModel ──────────────────────────────────────────────────────────────
@@ -75,7 +73,7 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     val state: StateFlow<MeshUiState> = _state.asStateFlow()
 
     init {
-        _state.update { it.copy(recentMacs = loadRecentMacs(), themeMode = loadThemeMode()) }
+        _state.update { it.copy(recentMacs = loadRecentMacs(), theme = loadThemeSettings()) }
         // Initialize channels 0-7, with public channel pre-configured
         channels[0] = Channel.fromHex(0, "Public", "8b3387e9c5cdea6ac9e5edbaa115cd72")
         for (i in 1..7) {
@@ -96,9 +94,74 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleScan() = client.toggleScan()
 
-    fun setThemeMode(mode: AppThemeMode) {
-        prefs.edit().putString(PREF_THEME_MODE, mode.name).apply()
-        _state.update { it.copy(themeMode = mode) }
+    fun setMonetEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_USE_MONET, enabled).apply()
+        _state.update { it.copy(theme = it.theme.copy(useMonet = enabled)) }
+    }
+
+    fun setDarkModeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_DARK_MODE, enabled).apply()
+        _state.update { it.copy(theme = it.theme.copy(darkMode = enabled)) }
+    }
+
+    fun setNodeName(name: String) {
+        val normalized = name.trim()
+        if (_state.value.connection !is BleState.Connected) {
+            BleDebugLog.add("Node name was not changed: node is disconnected")
+            return
+        }
+        if (normalized.isEmpty()) {
+            BleDebugLog.add("Node name was not changed: name is empty")
+            return
+        }
+        if (normalized.encodeToByteArray().size > MeshProtocol.maxNodeNameBytes) {
+            BleDebugLog.add("Node name was not changed: exceeds ${MeshProtocol.maxNodeNameBytes} UTF-8 bytes")
+            return
+        }
+        client.write(MeshProtocol.setNodeName(normalized))
+        _state.update { it.copy(node = it.node.copy(name = normalized)) }
+        BleDebugLog.add("Requested node rename to '$normalized'")
+    }
+
+    fun sendSelfAdvert(flood: Boolean) {
+        if (_state.value.connection !is BleState.Connected) {
+            BleDebugLog.add("Self advert was not sent: node is disconnected")
+            return
+        }
+        client.write(MeshProtocol.sendSelfAdvert(flood))
+        BleDebugLog.add("Requested ${if (flood) "flood" else "nearby"} self advert")
+    }
+
+    fun setRadioSettings(frequencyHz: Int, bandwidthHz: Int, spreadingFactor: Int, codingRate: Int, txPowerDbm: Int) {
+        if (_state.value.connection !is BleState.Connected) {
+            BleDebugLog.add("Radio settings were not changed: node is disconnected")
+            return
+        }
+        val maxTxPower = _state.value.node.maxTxPowerDbm ?: 22
+        if (txPowerDbm !in 0..maxTxPower) {
+            BleDebugLog.add("Radio settings were not changed: TX power must be 0-$maxTxPower dBm")
+            return
+        }
+        try {
+            // Older firmware encodes 4/5..4/8 as 1..4; preserve its convention.
+            val deviceCodingRate = if ((_state.value.node.codingRate ?: codingRate) <= 4) codingRate - 4 else codingRate
+            client.write(MeshProtocol.setRadioParams(frequencyHz, bandwidthHz, spreadingFactor, deviceCodingRate))
+            client.write(MeshProtocol.setRadioTxPower(txPowerDbm))
+            _state.update { it.copy(node = it.node.copy(
+                frequencyHz = frequencyHz,
+                bandwidthHz = bandwidthHz,
+                spreadingFactor = spreadingFactor,
+                codingRate = deviceCodingRate,
+                txPowerDbm = txPowerDbm,
+            )) }
+            BleDebugLog.add("Requested radio update: ${frequencyHz / 1_000_000.0} MHz, ${bandwidthHz / 1_000} kHz, SF$spreadingFactor, 4/$codingRate, $txPowerDbm dBm")
+            viewModelScope.launch {
+                delay(600)
+                if (_state.value.connection is BleState.Connected) client.write(MeshProtocol.deviceQuery())
+            }
+        } catch (e: IllegalArgumentException) {
+            BleDebugLog.add("Radio settings were not changed: ${e.message}")
+        }
     }
 
     fun connect(device: BleDevice) {
@@ -266,9 +329,10 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
         } catch (_: Exception) { emptyList() }
     }
 
-    private fun loadThemeMode(): AppThemeMode = prefs.getString(PREF_THEME_MODE, null)
-        ?.let { value -> AppThemeMode.entries.firstOrNull { it.name == value } }
-        ?: AppThemeMode.System
+    private fun loadThemeSettings() = AppThemeSettings(
+        useMonet = prefs.getBoolean(PREF_USE_MONET, false),
+        darkMode = prefs.getBoolean(PREF_DARK_MODE, false),
+    )
 
     // ── Protocol ───────────────────────────────────────────────────────────
 
@@ -329,6 +393,14 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
                         model = event.node.model ?: it.node.model,
                         firmware = event.node.firmware ?: it.node.firmware,
                         publicKey = event.node.publicKey ?: it.node.publicKey,
+                        txPowerDbm = event.node.txPowerDbm ?: it.node.txPowerDbm,
+                        maxTxPowerDbm = event.node.maxTxPowerDbm ?: it.node.maxTxPowerDbm,
+                        frequencyHz = event.node.frequencyHz ?: it.node.frequencyHz,
+                        bandwidthHz = event.node.bandwidthHz ?: it.node.bandwidthHz,
+                        spreadingFactor = event.node.spreadingFactor ?: it.node.spreadingFactor,
+                        codingRate = event.node.codingRate ?: it.node.codingRate,
+                        latitude = event.node.latitude ?: it.node.latitude,
+                        longitude = event.node.longitude ?: it.node.longitude,
                     ))
                 }
                 event.node.publicKey?.let(::restoreDeviceState)
@@ -570,12 +642,12 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
 
     private fun resolveRelayNames(pathBytes: ByteArray, hashWidth: Int): List<String> {
         if (pathBytes.isEmpty() || hashWidth !in 1..4) return emptyList()
-        return pathBytes.asList().chunked(hashWidth).map { hash ->
+        return pathBytes.asList().chunked(hashWidth).mapNotNull { hash ->
             val prefix = hash.joinToString("") { "%02X".format(it) }
             contacts.values.filter { it.type == ContactType.Repeater }
                 .singleOrNull { it.publicKey.startsWith(prefix, ignoreCase = true) }
-                ?.name ?: "Relay $prefix"
-        }
+                ?.name
+        }.distinct()
     }
 
     private fun publishMessages() {
@@ -648,7 +720,8 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private companion object {
-        const val PREF_THEME_MODE = "theme_mode"
+        const val PREF_USE_MONET = "use_monet"
+        const val PREF_DARK_MODE = "dark_mode"
         const val CONTACT_SYNC_TIMEOUT_MS = 20_000L
         const val QUEUE_SYNC_TIMEOUT_MS = 5_000L
         const val MAX_DIRECT_RETRIES = 3

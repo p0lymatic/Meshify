@@ -2,6 +2,11 @@ package com.polymatic.meshify.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,10 +60,10 @@ fun ChannelChatScreen(
                 title = {
                     Column {
                         Text("#${channel.name}", fontWeight = FontWeight.Bold)
-                        Text("Channel ${channel.index}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Канал ${channel.index}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") } },
             )
         },
     ) { padding ->
@@ -81,7 +86,7 @@ fun ChannelChatScreen(
             MessageComposer(
                 modifier = Modifier.imePadding().navigationBarsPadding(),
                 value = inputText,
-                placeholder = "Message #${channel.name}",
+                placeholder = "Сообщение в #${channel.name}",
                 onValueChange = { inputText = it },
                 onSend = {
                     val text = inputText.trim()
@@ -102,10 +107,10 @@ private fun EmptyChannelState(channel: Channel) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom,
     ) {
-        Icon(Icons.Rounded.Tag, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.tertiary.copy(alpha = .7f))
+        Icon(Icons.Rounded.Tag, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .7f))
         Spacer(Modifier.height(12.dp))
-        Text("No messages in #${channel.name}", style = MaterialTheme.typography.titleMedium)
-        Text("New messages will appear here", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("В #${channel.name} пока нет сообщений", style = MaterialTheme.typography.titleMedium)
+        Text("Новые сообщения появятся здесь", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -114,20 +119,21 @@ private fun EmptyChannelState(channel: Channel) {
 private fun ChannelMessageBubble(message: ChannelMessage) {
     var expanded by remember(message.messageId) { mutableStateOf(false) }
     val outgoing = message.isOutgoing
-    val background = if (outgoing) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-    val foreground = if (outgoing) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface
+    val background = if (outgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    val foreground = if (outgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
 
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
         Surface(
             color = background,
-            tonalElevation = if (outgoing) 1.dp else 0.dp,
+            tonalElevation = if (outgoing) 2.dp else 1.dp,
             shape = RoundedCornerShape(
-                topStart = 17.dp,
-                topEnd = 17.dp,
-                bottomStart = if (outgoing) 17.dp else 3.dp,
-                bottomEnd = if (outgoing) 3.dp else 17.dp,
+                topStart = if (outgoing) 24.dp else 12.dp,
+                topEnd = if (outgoing) 12.dp else 24.dp,
+                bottomStart = if (outgoing) 24.dp else 4.dp,
+                bottomEnd = if (outgoing) 4.dp else 24.dp,
             ),
-            modifier = Modifier.widthIn(min = 88.dp, max = 328.dp).clickable { expanded = !expanded },
+            modifier = Modifier.widthIn(min = 88.dp, max = 328.dp)
+                .clickable { expanded = !expanded },
         ) {
             Column(Modifier.padding(start = 13.dp, end = 11.dp, top = 8.dp, bottom = 7.dp)) {
                 if (!outgoing && message.senderName.isNotBlank()) {
@@ -148,7 +154,11 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
                     Text(formatTimestamp(message.timestamp), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
                     if (outgoing) ChannelStatusIcon(message.status, foreground)
                 }
-                AnimatedVisibility(expanded) {
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(animationSpec = tween(190), expandFrom = Alignment.Top) + fadeIn(tween(140)),
+                    exit = shrinkVertically(animationSpec = tween(150), shrinkTowards = Alignment.Top) + fadeOut(tween(100)),
+                ) {
                     RouteDetails(
                         pathLength = message.pathLength,
                         pathBytes = message.pathBytes,
@@ -156,6 +166,10 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
                         repeats = message.repeatCount,
                         snr = message.snr,
                         tripTimeMs = null,
+                        status = message.status,
+                        timestamp = message.timestamp,
+                        direction = if (outgoing) "Исходящее" else "Входящее",
+                        messageKind = "Сообщение канала #${message.channelIndex}",
                         relayNames = message.relayNames,
                         tint = foreground,
                     )
@@ -168,10 +182,10 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
 @Composable
 private fun ChannelStatusIcon(status: MessageStatus, tint: Color) {
     val (icon, description) = when (status) {
-        MessageStatus.Pending -> Icons.Rounded.Schedule to "Pending"
-        MessageStatus.Sent -> Icons.Rounded.Done to "Sent"
-        MessageStatus.Delivered -> Icons.Rounded.DoneAll to "Delivered"
-        MessageStatus.Failed -> Icons.Rounded.ErrorOutline to "Failed"
+        MessageStatus.Pending -> Icons.Rounded.Schedule to "Отправляется"
+        MessageStatus.Sent -> Icons.Rounded.Done to "Отправлено"
+        MessageStatus.Delivered -> Icons.Rounded.DoneAll to "Доставлено"
+        MessageStatus.Failed -> Icons.Rounded.ErrorOutline to "Не доставлено"
     }
     Icon(icon, description, Modifier.size(14.dp), tint = if (status == MessageStatus.Failed) MaterialTheme.colorScheme.error else tint.copy(alpha = .75f))
 }

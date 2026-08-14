@@ -5,6 +5,7 @@ import java.nio.ByteOrder
 
 object MeshProtocol {
     const val maxFrameSize = 172
+    const val maxNodeNameBytes = 31
     const val maxDirectMessageBytes = 157
     const val maxChannelMessageBytes = 160
     const val cmdAppStart = 1
@@ -12,6 +13,10 @@ object MeshProtocol {
     const val cmdSendChannelTextMessage = 3
     const val cmdGetContacts = 4
     const val cmdSetDeviceTime = 6
+    const val cmdSendSelfAdvert = 7
+    const val cmdSetAdvertName = 8
+    const val cmdSetRadioParams = 11
+    const val cmdSetRadioTxPower = 12
     const val cmdSyncNextMessage = 10
     const val cmdGetBatteryAndStorage = 20
     const val cmdDeviceQuery = 22
@@ -43,6 +48,35 @@ object MeshProtocol {
 
     fun setTime(epochSeconds: Long): ByteArray = ByteBuffer.allocate(5)
         .order(ByteOrder.LITTLE_ENDIAN).put(cmdSetDeviceTime.toByte()).putInt(epochSeconds.toInt()).array()
+
+    /** MeshCore advert names are limited to 31 UTF-8 bytes. */
+    fun setNodeName(name: String): ByteArray {
+        val nameBytes = name.encodeToByteArray().take(maxNodeNameBytes).toByteArray()
+        return byteArrayOf(cmdSetAdvertName.toByte()) + nameBytes
+    }
+
+    /** Requests that the node sends its own advert, directly or flooded through the mesh. */
+    fun sendSelfAdvert(flood: Boolean): ByteArray =
+        byteArrayOf(cmdSendSelfAdvert.toByte(), if (flood) 1 else 0)
+
+    fun setRadioParams(frequencyHz: Int, bandwidthHz: Int, spreadingFactor: Int, codingRate: Int): ByteArray {
+        require(frequencyHz in 300_000_000..2_500_000_000) { "Frequency must be 300-2500 MHz" }
+        require(bandwidthHz in supportedBandwidthsHz) { "Unsupported LoRa bandwidth" }
+        require(spreadingFactor in 5..12) { "Spreading factor must be SF5-SF12" }
+        require(codingRate in 1..8) { "Unsupported coding rate" }
+        return ByteBuffer.allocate(11).order(ByteOrder.LITTLE_ENDIAN)
+            .put(cmdSetRadioParams.toByte())
+            .putInt(frequencyHz)
+            .putInt(bandwidthHz)
+            .put(spreadingFactor.toByte())
+            .put(codingRate.toByte())
+            .array()
+    }
+
+    fun setRadioTxPower(powerDbm: Int): ByteArray {
+        require(powerDbm in 0..127) { "TX power must fit in one signed byte" }
+        return byteArrayOf(cmdSetRadioTxPower.toByte(), powerDbm.toByte())
+    }
 
     fun sendChannelMessage(channelIndex: Int, text: String, timestampSeconds: Long = System.currentTimeMillis() / 1_000): ByteArray {
         if (channelIndex !in 0..7) throw IllegalArgumentException("channelIndex must be 0-7")
@@ -242,7 +276,20 @@ object MeshProtocol {
 
     private fun parseSelfInfo(frame: ByteArray): MeshEvent.NodeUpdated? {
         if (frame.size < 58) return null
-        return MeshEvent.NodeUpdated(NodeInfo(name = cString(frame, 58, frame.size - 58), publicKey = frame.copyOfRange(4, 36).joinToString("") { "%02X".format(it) }))
+        return MeshEvent.NodeUpdated(
+            NodeInfo(
+                name = cString(frame, 58, frame.size - 58),
+                publicKey = frame.copyOfRange(4, 36).joinToString("") { "%02X".format(it) },
+                txPowerDbm = frame[2].toInt(),
+                maxTxPowerDbm = frame[3].toInt(),
+                latitude = int32(frame, 36) / 1_000_000.0,
+                longitude = int32(frame, 40) / 1_000_000.0,
+                frequencyHz = uint32(frame, 48).toInt(),
+                bandwidthHz = uint32(frame, 52).toInt(),
+                spreadingFactor = frame[56].toInt() and 0xFF,
+                codingRate = frame[57].toInt() and 0xFF,
+            ),
+        )
     }
 
     private fun parseDeviceInfo(frame: ByteArray): MeshEvent.NodeUpdated? {
@@ -268,6 +315,8 @@ object MeshProtocol {
     private fun int32(b: ByteArray, at: Int): Int = ByteBuffer.wrap(b, at, 4).order(ByteOrder.LITTLE_ENDIAN).int
 }
 
+private val supportedBandwidthsHz = setOf(7_800, 10_400, 15_600, 20_800, 31_250, 41_700, 62_500, 125_000, 250_000, 500_000)
+
 private const val textTypePlain = 0
 data class Contact(
     val publicKey: String,
@@ -282,7 +331,21 @@ data class Contact(
     val pathHashWidth: Int = 1,
 )
 enum class ContactType(val label: String) { Chat("Chat"), Repeater("Repeater"), Room("Room"), Sensor("Sensor"); companion object { fun fromWire(value: Int) = entries.getOrElse(value - 1) { Chat } } }
-data class NodeInfo(val name: String? = null, val model: String? = null, val firmware: String? = null, val publicKey: String? = null, val batteryMv: Int? = null)
+data class NodeInfo(
+    val name: String? = null,
+    val model: String? = null,
+    val firmware: String? = null,
+    val publicKey: String? = null,
+    val batteryMv: Int? = null,
+    val txPowerDbm: Int? = null,
+    val maxTxPowerDbm: Int? = null,
+    val frequencyHz: Int? = null,
+    val bandwidthHz: Int? = null,
+    val spreadingFactor: Int? = null,
+    val codingRate: Int? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
 
 data class Message(
     val messageId: String,

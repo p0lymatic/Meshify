@@ -50,7 +50,7 @@ fun AddChannelDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(topStart = 32.dp, topEnd = 20.dp, bottomEnd = 32.dp, bottomStart = 20.dp),
             tonalElevation = 6.dp,
         ) {
             Column(
@@ -60,7 +60,7 @@ fun AddChannelDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Add Channel",
+                    "Добавить канал",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -74,19 +74,19 @@ fun AddChannelDialog(
                             showError = false
                         }
                     },
-                    label = { Text("Channel Index (0-7)") },
+                    label = { Text("Индекс канала (0-7)") },
                     modifier = Modifier.fillMaxWidth(),
                     isError = showError,
                     supportingText = if (showError) {
-                        { Text("Index must be 0-7") }
+                        { Text("Индекс должен быть от 0 до 7") }
                     } else null,
                 )
 
                 OutlinedTextField(
                     value = channelName,
                     onValueChange = { channelName = it },
-                    label = { Text("Channel Name") },
-                    placeholder = { Text("General") },
+                    label = { Text("Имя канала") },
+                    placeholder = { Text("Общий") },
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -95,7 +95,7 @@ fun AddChannelDialog(
                     onValueChange = {
                         channelPsk = it.filter { c -> c in "0123456789ABCDEFabcdef" }
                     },
-                    label = { Text("PSK (32 hex chars)") },
+                    label = { Text("PSK (32 hex-символа)") },
                     placeholder = { Text("8b3387e9c5cdea6ac9e5edbaa115cd72") },
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
@@ -112,10 +112,10 @@ fun AddChannelDialog(
                     ) {
                         Icon(Icons.Rounded.QrCodeScanner, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Scan QR")
+                        Text("Сканировать QR")
                     }
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text("Отмена")
                     }
                     Button(
                         onClick = {
@@ -128,7 +128,7 @@ fun AddChannelDialog(
                         },
                         enabled = channelName.isNotBlank() && channelPsk.length == 32,
                     ) {
-                        Text("Add")
+                        Text("Добавить")
                     }
                 }
             }
@@ -164,7 +164,7 @@ fun QrChannelScanner(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
             permissionGranted = granted
-            if (!granted) errorMessage = "Camera access is required to scan a QR code"
+            if (!granted) errorMessage = "Для сканирования QR-кода нужен доступ к камере"
         }
     )
 
@@ -199,7 +199,7 @@ fun QrChannelScanner(
                         barcodeView.pause()
                         onScanned(channel.index, channel.name, channel.pskHex)
                     }
-                    .onFailure { errorMessage = it.message ?: "Unsupported channel QR code" }
+                    .onFailure { errorMessage = it.message ?: "Неподдерживаемый QR-код канала" }
             }
 
             override fun possibleResultPoints(resultPoints: MutableList<ResultPoint>?) = Unit
@@ -216,7 +216,7 @@ fun QrChannelScanner(
                 AndroidView(factory = { barcodeView }, modifier = Modifier.fillMaxSize())
                 Box(
                     Modifier.align(Alignment.Center).size(252.dp)
-                        .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)),
+                        .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 28.dp, topEnd = 16.dp, bottomEnd = 28.dp, bottomStart = 16.dp)),
                 )
             }
             Row(
@@ -224,14 +224,14 @@ fun QrChannelScanner(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 FilledTonalIconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад")
                 }
                 if (permissionGranted) {
                     FilledTonalIconButton(onClick = {
                         torchEnabled = !torchEnabled
                         if (torchEnabled) barcodeView.setTorchOn() else barcodeView.setTorchOff()
                     }) {
-                        Icon(if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, "Flash")
+                        Icon(if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, "Фонарик")
                     }
                 }
             }
@@ -252,7 +252,7 @@ fun QrChannelScanner(
                 )
                 if (!permissionGranted) {
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) { Text("Allow camera") }
+                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) { Text("Разрешить камеру") }
                 }
             }
         }

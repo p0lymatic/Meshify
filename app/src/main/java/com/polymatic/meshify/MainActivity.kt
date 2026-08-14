@@ -46,7 +46,11 @@ class MainActivity : ComponentActivity() {
                 onCloseChannel = viewModel::closeChannel,
                 onSendChannelMessage = viewModel::sendChannelMessage,
                 onAddChannel = viewModel::setChannel,
-                onThemeModeChanged = viewModel::setThemeMode,
+                onMonetChanged = viewModel::setMonetEnabled,
+                onDarkModeChanged = viewModel::setDarkModeEnabled,
+                onSetNodeName = viewModel::setNodeName,
+                onSendSelfAdvert = viewModel::sendSelfAdvert,
+                onSetRadioSettings = viewModel::setRadioSettings,
             )
         }
     }

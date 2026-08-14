@@ -2,11 +2,17 @@ package com.polymatic.meshify.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -68,7 +74,7 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
                 },
             )
         },
@@ -94,7 +100,7 @@ fun ChatScreen(
             MessageComposer(
                 modifier = Modifier.imePadding().navigationBarsPadding(),
                 value = inputText,
-                placeholder = "Message ${contact.name}",
+                placeholder = "Сообщение для ${contact.name}",
                 onValueChange = { inputText = it },
                 onSend = {
                     val text = inputText.trim()
@@ -109,9 +115,9 @@ fun ChatScreen(
 }
 
 private fun contactRouteLabel(hops: Int) = when {
-    hops < 0 -> "Flood route"
-    hops == 0 -> "Direct route"
-    else -> "$hops relay hops"
+    hops < 0 -> "Flood-маршрут"
+    hops == 0 -> "Прямой маршрут"
+    else -> "Реле: $hops"
 }
 
 @Composable
@@ -123,8 +129,8 @@ private fun EmptyMessageState(contact: Contact) {
     ) {
         Icon(Icons.Rounded.ChatBubbleOutline, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .6f))
         Spacer(Modifier.height(12.dp))
-        Text("No messages yet", style = MaterialTheme.typography.titleMedium)
-        Text("Start a conversation with ${contact.name}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Сообщений пока нет", style = MaterialTheme.typography.titleMedium)
+        Text("Начните диалог с ${contact.name}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -139,9 +145,10 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
         Surface(
             color = background,
-            tonalElevation = if (outgoing) 1.dp else 0.dp,
+            tonalElevation = if (outgoing) 2.dp else 1.dp,
             shape = messageBubbleShape(outgoing),
-            modifier = Modifier.widthIn(min = 76.dp, max = 328.dp).clickable { expanded = !expanded },
+            modifier = Modifier.widthIn(min = 76.dp, max = 328.dp)
+                .clickable { expanded = !expanded },
         ) {
             Column(Modifier.padding(start = 13.dp, end = 11.dp, top = 9.dp, bottom = 7.dp)) {
                 Text(message.text, style = MaterialTheme.typography.bodyLarge, color = foreground)
@@ -156,12 +163,16 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
                         MessageStatusIcon(message.status, foreground.copy(alpha = .75f))
                         if (message.status == MessageStatus.Failed) {
                             IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
-                                Icon(Icons.Rounded.Refresh, "Retry", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Rounded.Refresh, "Повторить", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
                 }
-                AnimatedVisibility(expanded) {
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(animationSpec = tween(190), expandFrom = Alignment.Top) + fadeIn(tween(140)),
+                    exit = shrinkVertically(animationSpec = tween(150), shrinkTowards = Alignment.Top) + fadeOut(tween(100)),
+                ) {
                     RouteDetails(
                         pathLength = message.pathLength,
                         pathBytes = message.pathBytes,
@@ -169,6 +180,12 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
                         repeats = 0,
                         snr = message.snr,
                         tripTimeMs = message.tripTimeMs,
+                        estimatedTimeoutMs = message.estimatedTimeoutMs,
+                        ackHash = message.ackHash,
+                        status = message.status,
+                        timestamp = message.timestamp,
+                        direction = if (outgoing) "Исходящее" else "Входящее",
+                        messageKind = "Личное сообщение",
                         relayNames = message.relayNames,
                         tint = foreground,
                     )
@@ -186,7 +203,12 @@ internal fun MessageComposer(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
-    Surface(modifier = modifier, tonalElevation = 2.dp) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,
@@ -196,12 +218,22 @@ internal fun MessageComposer(
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
                 placeholder = { Text(placeholder) },
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(26.dp),
                 maxLines = 4,
             )
             Spacer(Modifier.width(7.dp))
-            FilledIconButton(onClick = onSend, enabled = value.isNotBlank(), modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Rounded.Send, "Send")
+            FilledIconButton(
+                onClick = onSend,
+                enabled = value.isNotBlank(),
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ),
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.Send, "Отправить", Modifier.size(24.dp))
             }
         }
     }
@@ -215,66 +247,105 @@ internal fun RouteDetails(
     repeats: Int,
     snr: Float?,
     tripTimeMs: Long?,
+    estimatedTimeoutMs: Long? = null,
+    ackHash: Long? = null,
+    status: MessageStatus? = null,
+    timestamp: Long? = null,
+    direction: String? = null,
+    messageKind: String? = null,
     relayNames: List<String>,
     tint: Color,
 ) {
     HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 7.dp), color = tint.copy(alpha = .16f))
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("Информация о сообщении", style = MaterialTheme.typography.labelLarge, color = tint.copy(alpha = .9f))
+        messageKind?.let { MessageInfoRow("Тип", it, tint) }
+        direction?.let { MessageInfoRow("Направление", it, tint) }
+        MessageInfoRow(
+            "Маршрут",
             when {
-                pathLength == null -> "Route information unavailable"
-                pathLength < 0 -> "Flood route"
-                pathLength == 0 -> "Direct radio path"
-                else -> "$pathLength relay ${if (pathLength == 1) "hop" else "hops"}"
+                pathLength == null -> "нет данных"
+                pathLength < 0 -> "flood-маршрут"
+                pathLength == 0 -> "прямое радио-соединение"
+                else -> "$pathLength ${russianHopLabel(pathLength)}"
             },
-            style = MaterialTheme.typography.labelMedium,
-            color = tint.copy(alpha = .86f),
+            tint,
         )
-        if (repeats > 0) Text("Heard again by $repeats ${if (repeats == 1) "relay/path" else "relays/paths"}", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f))
-        pathLabels(pathBytes, hashWidth).takeIf { it.isNotEmpty() }?.let {
-            Text("Path: ${it.joinToString("  ->  ")}", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f))
+        if (pathLength != null && pathLength > 0) {
+            val routeBytes = pathBytes.size
+            val hashSize = hashWidth ?: if (routeBytes > 0) routeBytes / pathLength else 0
+            MessageInfoRow(
+                "Данные маршрута",
+                if (hashSize > 0) "$routeBytes байт, хеш реле $hashSize байт" else "$routeBytes байт",
+                tint,
+            )
         }
-        if (relayNames.isNotEmpty()) Text("Relays: ${relayNames.joinToString("  ->  ")}", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f))
-        snr?.let { Text("SNR ${"%.1f".format(Locale.US, it)} dB", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f)) }
-        tripTimeMs?.let { Text("ACK in $it ms", style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .72f)) }
+        if (repeats > 0) MessageInfoRow("Повторные приёмы", "${repeats + 1} путей", tint)
+        relayNames.filterNot(::isRawRelayIdentifier).takeIf { it.isNotEmpty() }?.let {
+            MessageInfoRow("Реле (${it.size})", it.joinToString("  ->  "), tint)
+        }
+        if (pathLength != null && pathLength > 0 && relayNames.filterNot(::isRawRelayIdentifier).isEmpty()) {
+            MessageInfoRow("Реле", "не удалось сопоставить с контактами", tint)
+        }
+        snr?.let { MessageInfoRow("Качество сигнала", "${"%.1f".format(Locale.US, it)} dB SNR", tint) }
+        tripTimeMs?.let { MessageInfoRow("Подтверждение", "получено за $it мс", tint) }
+        estimatedTimeoutMs?.takeIf { tripTimeMs == null }?.let { MessageInfoRow("Подтверждение", "ожидание до ${it / 1_000} с", tint) }
+        status?.let { MessageInfoRow("Статус", messageStatusLabel(it), tint) }
+        timestamp?.let { MessageInfoRow("Время", SimpleDateFormat("d MMMM, HH:mm:ss", Locale("ru")).format(Date(it)), tint) }
+        ackHash?.let { MessageInfoRow("ID пакета", it.toString(16).uppercase(Locale.US), tint) }
     }
 }
 
-private fun pathLabels(bytes: ByteArray, width: Int?): List<String> {
-    if (bytes.isEmpty()) return emptyList()
-    val chunkSize = width?.takeIf { it in 1..4 } ?: 1
-    return bytes.asList().chunked(chunkSize).map { chunk -> chunk.joinToString("") { "%02X".format(it) } }
+@Composable
+private fun MessageInfoRow(label: String, value: String, tint: Color) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .64f))
+        Spacer(Modifier.width(16.dp))
+        Text(value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = tint.copy(alpha = .82f))
+    }
 }
 
+private fun russianHopLabel(@Suppress("UNUSED_PARAMETER") count: Int): String = "реле"
+
+internal fun messageStatusLabel(status: MessageStatus): String = when (status) {
+    MessageStatus.Pending -> "отправляется"
+    MessageStatus.Sent -> "отправлено в сеть"
+    MessageStatus.Delivered -> "доставлено"
+    MessageStatus.Failed -> "не доставлено"
+}
+
+private fun isRawRelayIdentifier(value: String): Boolean =
+    value.startsWith("Relay ") || value.matches(Regex("[0-9A-F]{2,}", RegexOption.IGNORE_CASE))
+
 private fun messageBubbleShape(outgoing: Boolean) = RoundedCornerShape(
-    topStart = 17.dp,
-    topEnd = 17.dp,
-    bottomStart = if (outgoing) 17.dp else 3.dp,
-    bottomEnd = if (outgoing) 3.dp else 17.dp,
+    topStart = if (outgoing) 24.dp else 12.dp,
+    topEnd = if (outgoing) 12.dp else 24.dp,
+    bottomStart = if (outgoing) 24.dp else 4.dp,
+    bottomEnd = if (outgoing) 4.dp else 24.dp,
 )
 
 @Composable
 private fun MessageStatusIcon(status: MessageStatus, tint: Color) {
     val (icon, description) = when (status) {
-        MessageStatus.Pending -> Icons.Rounded.Schedule to "Pending"
-        MessageStatus.Sent -> Icons.Rounded.Done to "Sent"
-        MessageStatus.Delivered -> Icons.Rounded.DoneAll to "Delivered"
-        MessageStatus.Failed -> Icons.Rounded.ErrorOutline to "Failed"
+        MessageStatus.Pending -> Icons.Rounded.Schedule to "Отправляется"
+        MessageStatus.Sent -> Icons.Rounded.Done to "Отправлено"
+        MessageStatus.Delivered -> Icons.Rounded.DoneAll to "Доставлено"
+        MessageStatus.Failed -> Icons.Rounded.ErrorOutline to "Не доставлено"
     }
     Icon(icon, description, Modifier.size(14.dp), tint = if (status == MessageStatus.Failed) MaterialTheme.colorScheme.error else tint)
 }
 
 internal fun routeCountLabel(pathLength: Int): String = when {
     pathLength < 0 -> "flood"
-    pathLength == 0 -> "direct"
-    else -> "${pathLength}h"
+    pathLength == 0 -> "напрямую"
+    else -> "$pathLength реле"
 }
 
 internal fun formatTimestamp(timestamp: Long): String {
     val diff = System.currentTimeMillis() - timestamp
     return when {
-        diff in 0..<60_000 -> "Now"
-        diff in 60_000..<3_600_000 -> "${diff / 60_000} min"
+        diff in 0..<60_000 -> "Сейчас"
+        diff in 60_000..<3_600_000 -> "${diff / 60_000} мин"
         diff in 0..<86_400_000 -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
         else -> SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(timestamp))
     }
