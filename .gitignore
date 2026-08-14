@@ -25,7 +25,10 @@ output-metadata.json
 *.keystore
 google-services.json
 
-# Local project material
+# Local agent context and reference projects
 AGENT_HANDOFF.md
 HANDOFF.md
+QR_SCANNER_ISSUE*.md
+.agents/
+.codex/
 REFERENCES/
