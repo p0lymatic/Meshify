@@ -51,6 +51,8 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)

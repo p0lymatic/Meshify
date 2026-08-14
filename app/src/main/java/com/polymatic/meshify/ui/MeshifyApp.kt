@@ -59,12 +59,20 @@ private enum class Tab(val russianLabel: String, val englishLabel: String, val i
     onCloseChannel: () -> Unit,
     onSendChannelMessage: (Int, String) -> Unit,
     onAddChannel: (Int, String, String) -> Unit,
+    onDeleteChannel: (Int) -> Unit,
+    onToggleChannelPinned: (Int) -> Unit,
+    onMoveChannel: (Int, Int) -> Unit,
+    onSetChannelSort: (ChannelSort) -> Unit,
+    onSetTextCompression: (TextCompressionMode) -> Unit,
     onMonetChanged: (Boolean) -> Unit,
     onDarkModeChanged: (Boolean) -> Unit,
     onLanguageChanged: (String) -> Unit,
     onSetNodeName: (String) -> Unit,
     onSendSelfAdvert: (Boolean) -> Unit,
     onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit,
+    onRequestLocation: (() -> Unit) -> Unit,
+    onSetContactSort: (ContactSort) -> Unit,
+    onSetChatSort: (ChatSort) -> Unit,
 ) {
     var showDebugLog by remember { mutableStateOf(false) }
     val dark = state.theme.darkMode
@@ -98,6 +106,7 @@ private enum class Tab(val russianLabel: String, val englishLabel: String, val i
                         messages = state.channelMessages[destination.channel.index] ?: emptyList(),
                         onSendMessage = { text -> onSendChannelMessage(destination.channel.index, text) },
                         onBack = onCloseChannel,
+                        compressionMode = state.clientSpecific.textCompression,
                     )
                     }
                     is AppDestination.Chat -> {
@@ -107,10 +116,11 @@ private enum class Tab(val russianLabel: String, val englishLabel: String, val i
                         onSendMessage = { text -> onSendMessage(destination.contact.publicKey, text) },
                         onRetryMessage = { messageId -> onRetryMessage(destination.contact.publicKey, messageId) },
                         onBack = onCloseChat,
+                        compressionMode = state.clientSpecific.textCompression,
                     )
                     }
                     AppDestination.Home -> {
-                    ConnectedShell(state, onDisconnect, onClearDebugLog, showDebugLog, { showDebugLog = it }, onOpenChat, onOpenChannel, onAddChannel, onMonetChanged, onDarkModeChanged, onLanguageChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings)
+                    ConnectedShell(state, onDisconnect, onClearDebugLog, showDebugLog, { showDebugLog = it }, onOpenChat, onOpenChannel, onAddChannel, onDeleteChannel, onToggleChannelPinned, onMoveChannel, onSetChannelSort, onSetTextCompression, onMonetChanged, onDarkModeChanged, onLanguageChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings, onRequestLocation, onSetContactSort, onSetChatSort)
                     }
                     AppDestination.Scanner -> {
                     ScannerScreen(state, onRequestPermissions, onToggleScan, onConnect, onConnectByAddress, onRemoveRecentMac, { showDebugLog = true })
@@ -133,7 +143,7 @@ private sealed interface AppDestination {
 // ── Connected shell with tabs ──────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ConnectedShell(state: MeshUiState, onDisconnect: () -> Unit, onClearDebugLog: () -> Unit, showDebugLog: Boolean, setShowDebug: (Boolean) -> Unit, onOpenChat: (Contact) -> Unit, onOpenChannel: (Channel) -> Unit, onAddChannel: (Int, String, String) -> Unit, onMonetChanged: (Boolean) -> Unit, onDarkModeChanged: (Boolean) -> Unit, onLanguageChanged: (String) -> Unit, onSetNodeName: (String) -> Unit, onSendSelfAdvert: (Boolean) -> Unit, onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit) {
+@Composable private fun ConnectedShell(state: MeshUiState, onDisconnect: () -> Unit, onClearDebugLog: () -> Unit, showDebugLog: Boolean, setShowDebug: (Boolean) -> Unit, onOpenChat: (Contact) -> Unit, onOpenChannel: (Channel) -> Unit, onAddChannel: (Int, String, String) -> Unit, onDeleteChannel: (Int) -> Unit, onToggleChannelPinned: (Int) -> Unit, onMoveChannel: (Int, Int) -> Unit, onSetChannelSort: (ChannelSort) -> Unit, onSetTextCompression: (TextCompressionMode) -> Unit, onMonetChanged: (Boolean) -> Unit, onDarkModeChanged: (Boolean) -> Unit, onLanguageChanged: (String) -> Unit, onSetNodeName: (String) -> Unit, onSendSelfAdvert: (Boolean) -> Unit, onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit, onRequestLocation: (() -> Unit) -> Unit, onSetContactSort: (ContactSort) -> Unit, onSetChatSort: (ChatSort) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     BackHandler(enabled = tab != 0) { tab = 0 }
     Scaffold(
@@ -175,11 +185,11 @@ private sealed interface AppDestination {
             label = "tab content",
         ) { selectedTab ->
             when (Tab.entries[selectedTab]) {
-                Tab.Contacts -> ContactsTab(state, onOpenChat)
-                Tab.Channels -> ChannelsTab(state, onOpenChannel, onAddChannel)
-                Tab.Messages -> MessagesTab(state, onOpenChat)
-                Tab.Map -> MapTab()
-                Tab.Settings -> SettingsTab(state, onDisconnect, onClearDebugLog, { setShowDebug(true) }, onMonetChanged, onDarkModeChanged, onLanguageChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings)
+                Tab.Contacts -> ContactsTab(state, onOpenChat, onSetContactSort)
+                Tab.Channels -> ChannelsTab(state, onOpenChannel, onAddChannel, onDeleteChannel, onToggleChannelPinned, onMoveChannel, onSetChannelSort)
+                Tab.Messages -> MessagesTab(state, onOpenChat, onSetChatSort)
+                Tab.Map -> NodeMapScreen(state, onOpenChat, onRequestLocation)
+                Tab.Settings -> SettingsTab(state, onDisconnect, onClearDebugLog, { setShowDebug(true) }, onMonetChanged, onDarkModeChanged, onLanguageChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings, onSetTextCompression)
             }
         }
     }
@@ -218,21 +228,53 @@ private fun unreadBadgeText(count: Int) = if (count > 99) "99+" else count.toStr
 // ── Contacts tab ───────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ContactsTab(state: MeshUiState, onOpenChat: (Contact) -> Unit) {
+@Composable private fun ContactsTab(state: MeshUiState, onOpenChat: (Contact) -> Unit, onSetContactSort: (ContactSort) -> Unit) {
+    var selectedContact by remember { mutableStateOf<Contact?>(null) }
+    var showSortMenu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-                        TopAppBar(title = { Column { Text(state.node.name ?: "MeshCore", fontWeight = FontWeight.Bold); Text(state.node.model ?: "Подключено", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } })
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        TopAppBar(
+            title = { Column { Text(state.node.name ?: "MeshCore", fontWeight = FontWeight.Bold); Text(state.node.model ?: "Подключено", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+            actions = {
+                Box {
+                    IconButton(onClick = { showSortMenu = true }) { Icon(Icons.Rounded.Sort, "Сортировка контактов") }
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        ContactSort.entries.forEach { sort ->
+                            DropdownMenuItem(
+                                text = { Text(contactSortLabel(sort)) },
+                                onClick = { onSetContactSort(sort); showSortMenu = false },
+                                trailingIcon = { if (state.contactSort == sort) Icon(Icons.Rounded.Check, null) },
+                            )
+                        }
+                    }
+                }
+            },
+        )
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, top = 2.dp, end = 16.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             item { NodeSummary(state.node, state.contacts.size) }
-            item { Text(if (state.isSyncingContacts) "Синхронизация контактов…" else "Контакты · ${state.contacts.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) }
+            item { Text(if (state.isSyncingContacts) "Синхронизация контактов…" else "Контакты · ${state.contacts.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)) }
             if (!state.isSyncingContacts && state.contacts.isEmpty()) item { EmptyMsg(Icons.Rounded.PeopleOutline, "Контактов пока нет", "Нода добавит контакты, когда услышит их.") }
-            items(state.contacts, key = { it.publicKey }) { ContactCard(it, onOpenChat) }
+            items(state.contacts, key = { it.publicKey }) { ContactCard(it, onOpenChat) { selectedContact = it } }
         }
+    }
+    selectedContact?.let { contact ->
+        ContactDetailsSheet(
+            contact = contact,
+            onDismiss = { selectedContact = null },
+            onOpenChat = { selectedContact = null; onOpenChat(contact) },
+            onRunLos = null,
+            los = null,
+            checkingLos = false,
+        )
     }
 }
 
 @Composable private fun NodeSummary(node: NodeInfo, count: Int) {
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(topStart = 32.dp, topEnd = 20.dp, bottomEnd = 32.dp, bottomStart = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.Hub, null, Modifier.size(32.dp)); Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) { Text(node.firmware ?: "Нода готова", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Известных нод: $count", style = MaterialTheme.typography.bodyMedium) }
             node.batteryMv?.let { AssistChip(onClick = {}, label = { Text("${it / 1000.0} V") }, leadingIcon = { Icon(Icons.Rounded.BatteryFull, null) }) }
@@ -240,7 +282,7 @@ private fun unreadBadgeText(count: Int) = if (count > 99) "99+" else count.toStr
     }
 }
 
-@Composable private fun ContactCard(c: Contact, onOpenChat: (Contact) -> Unit) {
+@Composable private fun ContactCard(c: Contact, onOpenChat: (Contact) -> Unit, onShowInfo: (Contact) -> Unit) {
     val accent = if (c.type == ContactType.Chat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
     val icon = when (c.type) { ContactType.Chat -> Icons.Rounded.Person; ContactType.Repeater -> Icons.Rounded.CellTower; ContactType.Room -> Icons.Rounded.Forum; ContactType.Sensor -> Icons.Rounded.Sensors }
     ElevatedCard(onClick = { if (c.type == ContactType.Chat) onOpenChat(c) }, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 16.dp, bottomEnd = 28.dp, bottomStart = 16.dp)) { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -249,8 +291,16 @@ private fun unreadBadgeText(count: Int) = if (count > 99) "99+" else count.toStr
             Row(verticalAlignment = Alignment.CenterVertically) { Text(c.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.favorite) { Spacer(Modifier.width(5.dp)); Icon(Icons.Rounded.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp)) } }
             Text("${c.type.label} · ${contactRouteLabel(c.hops)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${c.publicKey.take(8)}…${c.publicKey.takeLast(6)}  ·  ${relativeTime(c.lastSeenEpoch)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }; if (c.latitude != 0.0 || c.longitude != 0.0) Icon(Icons.Rounded.LocationOn, "Местоположение", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = { onShowInfo(c) }) { Icon(Icons.Rounded.Info, "Информация о контакте", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
     } }
+}
+
+@Composable
+private fun contactSortLabel(sort: ContactSort): String = when (sort) {
+    ContactSort.RecentMessages -> uiText("Недавние сообщения", "Recent messages")
+    ContactSort.LastSeen -> uiText("Последняя активность", "Last seen")
+    ContactSort.Name -> uiText("По имени", "Name")
 }
 
 private fun contactRouteLabel(hops: Int) = when {

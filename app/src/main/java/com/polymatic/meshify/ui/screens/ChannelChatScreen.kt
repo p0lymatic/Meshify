@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import com.polymatic.meshify.mesh.Channel
 import com.polymatic.meshify.mesh.ChannelMessage
 import com.polymatic.meshify.mesh.MessageStatus
+import com.polymatic.meshify.mesh.MeshProtocol
+import com.polymatic.meshify.mesh.TextCompressionMode
+import com.polymatic.meshify.ui.uiText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +40,7 @@ fun ChannelChatScreen(
     messages: List<ChannelMessage>,
     onSendMessage: (String) -> Unit,
     onBack: () -> Unit,
+    compressionMode: TextCompressionMode = TextCompressionMode.Off,
 ) {
     var inputText by rememberSaveable(channel.index) { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -87,6 +91,8 @@ fun ChannelChatScreen(
                 modifier = Modifier.imePadding().navigationBarsPadding(),
                 value = inputText,
                 placeholder = "Сообщение в #${channel.name}",
+                maxBytes = MeshProtocol.maxChannelMessageBytes,
+                compressionMode = compressionMode,
                 onValueChange = { inputText = it },
                 onSend = {
                     val text = inputText.trim()
@@ -142,14 +148,21 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
                 }
                 Text(message.text, style = MaterialTheme.typography.bodyLarge, color = foreground)
                 Spacer(Modifier.height(5.dp))
+                RoutePathSummary(
+                    pathLength = message.pathLength,
+                    pathBytes = message.pathBytes,
+                    hashWidth = message.pathHashWidth,
+                    tint = foreground,
+                    modifier = Modifier.align(Alignment.End),
+                )
                 Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    message.pathLength?.let {
-                        Icon(Icons.Rounded.Route, null, Modifier.size(13.dp), tint = foreground.copy(alpha = .62f))
-                        Text(routeCountLabel(it), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
-                    }
                     if (message.repeatCount > 0) {
                         Icon(Icons.Rounded.CellTower, null, Modifier.size(13.dp), tint = foreground.copy(alpha = .62f))
-                        Text(message.repeatCount.toString(), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
+                        Text(
+                            heardRelaysLabel(message.repeatCount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = foreground.copy(alpha = .68f),
+                        )
                     }
                     Text(formatTimestamp(message.timestamp), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
                     if (outgoing) ChannelStatusIcon(message.status, foreground)
@@ -178,6 +191,12 @@ private fun ChannelMessageBubble(message: ChannelMessage) {
         }
     }
 }
+
+@Composable
+private fun heardRelaysLabel(count: Int): String = uiText(
+    "Услышано реле: $count",
+    if (count == 1) "Heard 1 relay" else "Heard $count relays",
+)
 
 @Composable
 private fun ChannelStatusIcon(status: MessageStatus, tint: Color) {

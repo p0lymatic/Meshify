@@ -3,6 +3,7 @@ package com.polymatic.meshify
 import com.polymatic.meshify.mesh.MeshEvent
 import com.polymatic.meshify.mesh.MeshProtocol
 import com.polymatic.meshify.ui.screens.routeCountLabel
+import com.polymatic.meshify.ui.screens.routePathIdentifiers
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -113,6 +114,19 @@ class MeshProtocolTest {
     }
 
     @Test
+    fun formatsPackedRouteAsRelayIdentifiers() {
+        assertEquals(
+            listOf("8131", "1191", "BAA3"),
+            routePathIdentifiers(
+                pathLength = 3,
+                pathBytes = byteArrayOf(0x81.toByte(), 0x31, 0x11, 0x91.toByte(), 0xBA.toByte(), 0xA3.toByte()),
+                hashWidth = 2,
+            ),
+        )
+        assertTrue(routePathIdentifiers(-1, byteArrayOf(0x12), 1).isEmpty())
+    }
+
+    @Test
     fun parsesV3ChannelPathAndSender() {
         val frame = byteArrayOf(
             MeshProtocol.responseChannelMsgRecvV3.toByte(),
@@ -138,6 +152,19 @@ class MeshProtocolTest {
         assertEquals(0x12345678, event.ackHash)
         assertEquals(845, event.tripTimeMs)
         assertTrue(event.tripTimeMs > 0)
+    }
+
+    @Test
+    fun computesFirmwareCompatibleDirectAckHash() {
+        // SHA-256([timestamp LE][attempt][text][sender public key]), first 4 bytes LE.
+        val hash = MeshProtocol.expectedDirectAckHash(
+            timestampSeconds = 1,
+            attempt = 0,
+            text = "hi",
+            senderPublicKey = "00".repeat(32),
+        )
+
+        assertEquals(0xEF09ED9D, hash)
     }
 
     private fun uint32(value: Long): ByteArray = ByteBuffer.allocate(4)

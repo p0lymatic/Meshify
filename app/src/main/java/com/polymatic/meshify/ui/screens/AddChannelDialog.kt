@@ -35,6 +35,8 @@ import com.journeyapps.barcodescanner.CompoundBarcodeView
 import com.journeyapps.barcodescanner.DefaultDecoderFactory
 import com.journeyapps.barcodescanner.camera.CameraSettings
 import com.polymatic.meshify.mesh.ChannelQrParser
+import com.polymatic.meshify.mesh.Channel
+import com.polymatic.meshify.ui.uiText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,10 +44,12 @@ fun AddChannelDialog(
     onDismiss: () -> Unit,
     onAdd: (Int, String, String) -> Unit,
     onScanQr: () -> Unit,
+    initialChannel: Channel? = null,
+    defaultIndex: Int = 0,
 ) {
-    var channelIndex by remember { mutableIntStateOf(0) }
-    var channelName by remember { mutableStateOf("") }
-    var channelPsk by remember { mutableStateOf("") }
+    var channelIndex by remember(initialChannel?.index, defaultIndex) { mutableIntStateOf(initialChannel?.index ?: defaultIndex.coerceIn(0, 7)) }
+    var channelName by remember(initialChannel?.index) { mutableStateOf(initialChannel?.name.orEmpty()) }
+    var channelPsk by remember(initialChannel?.index) { mutableStateOf(initialChannel?.pskHex.orEmpty()) }
     var showError by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -60,7 +64,7 @@ fun AddChannelDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Добавить канал",
+                    if (initialChannel == null) uiText("Добавить канал", "Add channel") else uiText("Изменить канал", "Edit channel"),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -76,6 +80,7 @@ fun AddChannelDialog(
                     },
                     label = { Text("Индекс канала (0-7)") },
                     modifier = Modifier.fillMaxWidth(),
+                    readOnly = initialChannel != null,
                     isError = showError,
                     supportingText = if (showError) {
                         { Text("Индекс должен быть от 0 до 7") }
@@ -102,18 +107,18 @@ fun AddChannelDialog(
                     supportingText = { Text("${channelPsk.length}/32 characters") },
                 )
 
+                OutlinedButton(
+                    onClick = onScanQr,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Rounded.QrCodeScanner, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Сканировать QR")
+                }
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 ) {
-                    OutlinedButton(
-                        onClick = onScanQr,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Rounded.QrCodeScanner, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Сканировать QR")
-                    }
                     TextButton(onClick = onDismiss) {
                         Text("Отмена")
                     }
@@ -128,7 +133,7 @@ fun AddChannelDialog(
                         },
                         enabled = channelName.isNotBlank() && channelPsk.length == 32,
                     ) {
-                        Text("Добавить")
+                        Text(if (initialChannel == null) uiText("Добавить", "Add") else uiText("Сохранить", "Save"))
                     }
                 }
             }

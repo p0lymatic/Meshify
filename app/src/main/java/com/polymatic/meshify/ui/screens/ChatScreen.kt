@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +34,9 @@ import androidx.compose.ui.unit.dp
 import com.polymatic.meshify.mesh.Contact
 import com.polymatic.meshify.mesh.Message
 import com.polymatic.meshify.mesh.MessageStatus
+import com.polymatic.meshify.mesh.MeshProtocol
+import com.polymatic.meshify.mesh.TextCompression
+import com.polymatic.meshify.mesh.TextCompressionMode
 import com.polymatic.meshify.ui.uiText
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -44,6 +50,7 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit,
     onRetryMessage: (String) -> Unit,
     onBack: () -> Unit,
+    compressionMode: TextCompressionMode = TextCompressionMode.Off,
 ) {
     var inputText by rememberSaveable(contact.publicKey) { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -102,6 +109,8 @@ fun ChatScreen(
                 modifier = Modifier.imePadding().navigationBarsPadding(),
                 value = inputText,
                 placeholder = uiText("Сообщение для ${contact.name}", "Message ${contact.name}"),
+                maxBytes = MeshProtocol.maxDirectMessageBytes,
+                compressionMode = compressionMode,
                 onValueChange = { inputText = it },
                 onSend = {
                     val text = inputText.trim()
@@ -154,11 +163,14 @@ private fun MessageBubble(message: Message, onRetry: () -> Unit) {
             Column(Modifier.padding(start = 13.dp, end = 11.dp, top = 9.dp, bottom = 7.dp)) {
                 Text(message.text, style = MaterialTheme.typography.bodyLarge, color = foreground)
                 Spacer(Modifier.height(5.dp))
+                RoutePathSummary(
+                    pathLength = message.pathLength,
+                    pathBytes = message.pathBytes,
+                    hashWidth = null,
+                    tint = foreground,
+                    modifier = Modifier.align(Alignment.End),
+                )
                 Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    message.pathLength?.let {
-                        Icon(Icons.Rounded.Route, null, Modifier.size(13.dp), tint = foreground.copy(alpha = .62f))
-                        Text(routeCountLabel(it), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
-                    }
                     Text(formatTimestamp(message.timestamp), style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = .68f))
                     if (outgoing) {
                         MessageStatusIcon(message.status, foreground.copy(alpha = .75f))
@@ -201,31 +213,66 @@ internal fun MessageComposer(
     modifier: Modifier = Modifier,
     value: String,
     placeholder: String,
+    maxBytes: Int = MeshProtocol.maxChannelMessageBytes,
+    compressionMode: TextCompressionMode = TextCompressionMode.Off,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
+    var showEmojiPicker by rememberSaveable { mutableStateOf(false) }
+    val encodedValue = remember(value, compressionMode) { TextCompression.encode(value.trim(), compressionMode) }
+    val usedBytes = encodedValue.encodeToByteArray().size
+    val availableBytes = maxBytes - usedBytes
+    val counterColor = when {
+        availableBytes < 0 -> MaterialTheme.colorScheme.error
+        availableBytes < 16 -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 4.dp,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(placeholder) },
-                shape = RoundedCornerShape(26.dp),
-                maxLines = 4,
-            )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
+            FilledTonalIconButton(
+                onClick = { showEmojiPicker = true },
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+            ) {
+                Icon(Icons.Rounded.EmojiEmotions, uiText("Добавить emoji", "Add emoji"), Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(5.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (availableBytes >= 0) {
+                        uiText(
+                            "$usedBytes / $maxBytes байт · доступно $availableBytes",
+                            "$usedBytes / $maxBytes bytes · $availableBytes available",
+                        )
+                    } else {
+                        uiText(
+                            "$usedBytes / $maxBytes байт · превышение ${-availableBytes}",
+                            "$usedBytes / $maxBytes bytes · ${-availableBytes} over limit",
+                        )
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = counterColor,
+                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, bottom = 3.dp),
+                    maxLines = 1,
+                )
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(placeholder) },
+                    shape = RoundedCornerShape(26.dp),
+                    maxLines = 4,
+                )
+            }
             Spacer(Modifier.width(7.dp))
             FilledIconButton(
                 onClick = onSend,
-                enabled = value.isNotBlank(),
+                enabled = value.isNotBlank() && availableBytes >= 0,
                 modifier = Modifier.size(56.dp),
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
@@ -235,6 +282,54 @@ internal fun MessageComposer(
                 ),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Send, "Отправить", Modifier.size(24.dp))
+            }
+        }
+    }
+    if (showEmojiPicker) {
+        EmojiPickerSheet(
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { emoji -> onValueChange(value + emoji); showEmojiPicker = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmojiPickerSheet(onDismiss: () -> Unit, onEmojiSelected: (String) -> Unit) {
+    val categories = listOf(
+        uiText("Смайлы", "Smileys") to listOf("😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😘", "😎", "🥳", "😢", "😭", "😡", "🤯", "😱", "🤔", "🤗", "🫡"),
+        uiText("Жесты", "Gestures") to listOf("👍", "👎", "👊", "✊", "🤝", "🙏", "👏", "🙌", "👋", "👌", "✌️", "💪", "🫶", "🤞", "🫡", "🤘"),
+        uiText("Сердца", "Hearts") to listOf("❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "💕", "💖", "💘", "💝", "💯", "💥"),
+        uiText("Предметы", "Objects") to listOf("🎉", "🎊", "🎁", "🏆", "⭐", "✨", "⚡", "🔥", "💡", "📷", "📱", "💻", "🎵", "🚀", "🌍", "☀️"),
+    )
+    var category by rememberSaveable { mutableIntStateOf(0) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 460.dp).padding(horizontal = 20.dp)) {
+            Text(uiText("Выберите emoji", "Choose an emoji"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                listOf("👍", "❤️", "😂", "🎉", "👏", "🔥").forEach { emoji ->
+                    FilledTonalIconButton(onClick = { onEmojiSelected(emoji) }, shape = RoundedCornerShape(14.dp)) {
+                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            ScrollableTabRow(selectedTabIndex = category, edgePadding = 0.dp) {
+                categories.forEachIndexed { index, item ->
+                    Tab(selected = category == index, onClick = { category = index }, text = { Text(item.first) })
+                }
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(8),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(vertical = 10.dp),
+            ) {
+                gridItems(categories[category].second) { emoji ->
+                    IconButton(onClick = { onEmojiSelected(emoji) }, modifier = Modifier.size(44.dp)) {
+                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
             }
         }
     }
@@ -281,7 +376,18 @@ internal fun RouteDetails(
                 tint,
             )
         }
-        if (repeats > 0) MessageInfoRow(uiText("Повторные приёмы", "Repeated receptions"), uiText("${repeats + 1} путей", "${repeats + 1} paths"), tint)
+        routePathIdentifiers(pathLength, pathBytes, hashWidth).takeIf { it.isNotEmpty() }?.let {
+            MessageInfoRow(
+                uiText("Идентификаторы маршрута", "Route identifiers"),
+                it.joinToString(", "),
+                tint,
+            )
+        }
+        if (repeats > 0) MessageInfoRow(
+            uiText("Услышано реле", "Heard relays"),
+            uiText("$repeats ${russianHopLabel(repeats)}", if (repeats == 1) "1 relay" else "$repeats relays"),
+            tint,
+        )
         relayNames.filterNot(::isRawRelayIdentifier).takeIf { it.isNotEmpty() }?.let {
             MessageInfoRow(uiText("Реле (${it.size})", "Relays (${it.size})"), it.joinToString("  ->  "), tint)
         }
@@ -318,6 +424,69 @@ internal fun messageStatusLabel(status: MessageStatus): String = when (status) {
 
 private fun isRawRelayIdentifier(value: String): Boolean =
     value.startsWith("Relay ") || value.matches(Regex("[0-9A-F]{2,}", RegexOption.IGNORE_CASE))
+
+/** Splits the packed route into the short hexadecimal relay identifiers shown by MeshCore. */
+internal fun routePathIdentifiers(pathLength: Int?, pathBytes: ByteArray, hashWidth: Int?): List<String> {
+    if (pathLength == null || pathLength <= 0 || pathBytes.isEmpty()) return emptyList()
+    val width = (hashWidth ?: (pathBytes.size / pathLength).takeIf { it > 0 } ?: 1).coerceIn(1, 4)
+    val count = minOf(pathLength, pathBytes.size / width)
+    return (0 until count).map { index ->
+        pathBytes.copyOfRange(index * width, (index + 1) * width)
+            .joinToString("") { byte -> "%02X".format(Locale.US, byte.toInt() and 0xFF) }
+    }
+}
+
+@Composable
+internal fun RoutePathSummary(
+    pathLength: Int?,
+    pathBytes: ByteArray,
+    hashWidth: Int?,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (pathLength == null) return
+    val identifiers = routePathIdentifiers(pathLength, pathBytes, hashWidth)
+    when {
+        pathLength < 0 -> Text(
+            uiText("flood-маршрут", "flood route"),
+            modifier = modifier,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint.copy(alpha = .68f),
+        )
+        pathLength == 0 -> Text(
+            uiText("Прямой маршрут", "Direct route"),
+            modifier = modifier,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint.copy(alpha = .68f),
+        )
+        else -> Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(Icons.Rounded.Route, null, Modifier.size(13.dp), tint = tint.copy(alpha = .62f))
+                Text(
+                    uiText("$pathLength ${hopWord(pathLength)}", "$pathLength ${if (pathLength == 1) "hop" else "hops"}"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint.copy(alpha = .68f),
+                )
+            }
+            if (identifiers.isNotEmpty()) {
+                Text(
+                    uiText("через ${identifiers.joinToString(",")}", "via ${identifiers.joinToString(",")}"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint.copy(alpha = .62f),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+private fun hopWord(count: Int): String = when {
+    count % 100 in 11..14 -> "хопов"
+    count % 10 == 1 -> "хоп"
+    count % 10 in 2..4 -> "хопа"
+    else -> "хопов"
+}
 
 private fun messageBubbleShape(outgoing: Boolean) = RoundedCornerShape(
     topStart = if (outgoing) 24.dp else 12.dp,
