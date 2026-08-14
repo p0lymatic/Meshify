@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
                 onAddChannel = viewModel::setChannel,
                 onMonetChanged = viewModel::setMonetEnabled,
                 onDarkModeChanged = viewModel::setDarkModeEnabled,
+                onLanguageChanged = viewModel::setLanguage,
                 onSetNodeName = viewModel::setNodeName,
                 onSendSelfAdvert = viewModel::sendSelfAdvert,
                 onSetRadioSettings = viewModel::setRadioSettings,
@@ -58,7 +59,11 @@ class MainActivity : ComponentActivity() {
     private fun requestBluetoothPermissions() {
         permissions.launch(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                )
             } else {
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
             },

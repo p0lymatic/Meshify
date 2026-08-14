@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.polymatic.meshify.mesh.Contact
 import com.polymatic.meshify.mesh.Message
 import com.polymatic.meshify.mesh.MessageStatus
+import com.polymatic.meshify.ui.uiText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -100,7 +101,7 @@ fun ChatScreen(
             MessageComposer(
                 modifier = Modifier.imePadding().navigationBarsPadding(),
                 value = inputText,
-                placeholder = "Сообщение для ${contact.name}",
+                placeholder = uiText("Сообщение для ${contact.name}", "Message ${contact.name}"),
                 onValueChange = { inputText = it },
                 onSend = {
                     val text = inputText.trim()
@@ -129,8 +130,8 @@ private fun EmptyMessageState(contact: Contact) {
     ) {
         Icon(Icons.Rounded.ChatBubbleOutline, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .6f))
         Spacer(Modifier.height(12.dp))
-        Text("Сообщений пока нет", style = MaterialTheme.typography.titleMedium)
-        Text("Начните диалог с ${contact.name}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(uiText("Сообщений пока нет", "No messages yet"), style = MaterialTheme.typography.titleMedium)
+        Text(uiText("Начните диалог с ${contact.name}", "Start a conversation with ${contact.name}"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -258,16 +259,16 @@ internal fun RouteDetails(
 ) {
     HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 7.dp), color = tint.copy(alpha = .16f))
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text("Информация о сообщении", style = MaterialTheme.typography.labelLarge, color = tint.copy(alpha = .9f))
-        messageKind?.let { MessageInfoRow("Тип", it, tint) }
-        direction?.let { MessageInfoRow("Направление", it, tint) }
+        Text(uiText("Информация о сообщении", "Message information"), style = MaterialTheme.typography.labelLarge, color = tint.copy(alpha = .9f))
+        messageKind?.let { MessageInfoRow(uiText("Тип", "Type"), it, tint) }
+        direction?.let { MessageInfoRow(uiText("Направление", "Direction"), it, tint) }
         MessageInfoRow(
-            "Маршрут",
+            uiText("Маршрут", "Route"),
             when {
-                pathLength == null -> "нет данных"
-                pathLength < 0 -> "flood-маршрут"
-                pathLength == 0 -> "прямое радио-соединение"
-                else -> "$pathLength ${russianHopLabel(pathLength)}"
+                pathLength == null -> uiText("нет данных", "unavailable")
+                pathLength < 0 -> uiText("flood-маршрут", "flood route")
+                pathLength == 0 -> uiText("прямое радио-соединение", "direct radio path")
+                else -> uiText("$pathLength ${russianHopLabel(pathLength)}", "$pathLength relay hops")
             },
             tint,
         )
@@ -275,24 +276,24 @@ internal fun RouteDetails(
             val routeBytes = pathBytes.size
             val hashSize = hashWidth ?: if (routeBytes > 0) routeBytes / pathLength else 0
             MessageInfoRow(
-                "Данные маршрута",
-                if (hashSize > 0) "$routeBytes байт, хеш реле $hashSize байт" else "$routeBytes байт",
+                uiText("Данные маршрута", "Route data"),
+                if (hashSize > 0) uiText("$routeBytes байт, хеш реле $hashSize байт", "$routeBytes bytes, $hashSize-byte relay hash") else uiText("$routeBytes байт", "$routeBytes bytes"),
                 tint,
             )
         }
-        if (repeats > 0) MessageInfoRow("Повторные приёмы", "${repeats + 1} путей", tint)
+        if (repeats > 0) MessageInfoRow(uiText("Повторные приёмы", "Repeated receptions"), uiText("${repeats + 1} путей", "${repeats + 1} paths"), tint)
         relayNames.filterNot(::isRawRelayIdentifier).takeIf { it.isNotEmpty() }?.let {
-            MessageInfoRow("Реле (${it.size})", it.joinToString("  ->  "), tint)
+            MessageInfoRow(uiText("Реле (${it.size})", "Relays (${it.size})"), it.joinToString("  ->  "), tint)
         }
         if (pathLength != null && pathLength > 0 && relayNames.filterNot(::isRawRelayIdentifier).isEmpty()) {
-            MessageInfoRow("Реле", "не удалось сопоставить с контактами", tint)
+            MessageInfoRow(uiText("Реле", "Relays"), uiText("не удалось сопоставить с контактами", "could not match contacts"), tint)
         }
-        snr?.let { MessageInfoRow("Качество сигнала", "${"%.1f".format(Locale.US, it)} dB SNR", tint) }
-        tripTimeMs?.let { MessageInfoRow("Подтверждение", "получено за $it мс", tint) }
-        estimatedTimeoutMs?.takeIf { tripTimeMs == null }?.let { MessageInfoRow("Подтверждение", "ожидание до ${it / 1_000} с", tint) }
-        status?.let { MessageInfoRow("Статус", messageStatusLabel(it), tint) }
-        timestamp?.let { MessageInfoRow("Время", SimpleDateFormat("d MMMM, HH:mm:ss", Locale("ru")).format(Date(it)), tint) }
-        ackHash?.let { MessageInfoRow("ID пакета", it.toString(16).uppercase(Locale.US), tint) }
+        snr?.let { MessageInfoRow(uiText("Качество сигнала", "Signal quality"), "${"%.1f".format(Locale.US, it)} dB SNR", tint) }
+        tripTimeMs?.let { MessageInfoRow(uiText("Подтверждение", "Acknowledgement"), uiText("получено за $it мс", "received in $it ms"), tint) }
+        estimatedTimeoutMs?.takeIf { tripTimeMs == null }?.let { MessageInfoRow(uiText("Подтверждение", "Acknowledgement"), uiText("ожидание до ${it / 1_000} с", "waiting up to ${it / 1_000}s"), tint) }
+        status?.let { MessageInfoRow(uiText("Статус", "Status"), messageStatusLabel(it), tint) }
+        timestamp?.let { MessageInfoRow(uiText("Время", "Time"), SimpleDateFormat("d MMMM, HH:mm:ss", if (uiText("ru", "en") == "ru") Locale("ru") else Locale.US).format(Date(it)), tint) }
+        ackHash?.let { MessageInfoRow(uiText("ID пакета", "Packet ID"), it.toString(16).uppercase(Locale.US), tint) }
     }
 }
 
@@ -307,11 +308,12 @@ private fun MessageInfoRow(label: String, value: String, tint: Color) {
 
 private fun russianHopLabel(@Suppress("UNUSED_PARAMETER") count: Int): String = "реле"
 
+@Composable
 internal fun messageStatusLabel(status: MessageStatus): String = when (status) {
-    MessageStatus.Pending -> "отправляется"
-    MessageStatus.Sent -> "отправлено в сеть"
-    MessageStatus.Delivered -> "доставлено"
-    MessageStatus.Failed -> "не доставлено"
+    MessageStatus.Pending -> uiText("отправляется", "sending")
+    MessageStatus.Sent -> uiText("отправлено в сеть", "sent to network")
+    MessageStatus.Delivered -> uiText("доставлено", "delivered")
+    MessageStatus.Failed -> uiText("не доставлено", "not delivered")
 }
 
 private fun isRawRelayIdentifier(value: String): Boolean =

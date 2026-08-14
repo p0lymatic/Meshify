@@ -34,12 +34,12 @@ import androidx.compose.ui.unit.dp
 import com.polymatic.meshify.mesh.*
 import com.polymatic.meshify.ui.screens.*
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    Contacts("Контакты", Icons.Rounded.People),
-    Channels("Каналы", Icons.Rounded.Forum),
-    Messages("Чаты", Icons.Rounded.ChatBubbleOutline),
-    Map("Карта", Icons.Rounded.Map),
-    Settings("Настройки", Icons.Rounded.Settings),
+private enum class Tab(val russianLabel: String, val englishLabel: String, val icon: ImageVector) {
+    Contacts("Контакты", "Contacts", Icons.Rounded.People),
+    Channels("Каналы", "Channels", Icons.Rounded.Forum),
+    Messages("Чаты", "Chats", Icons.Rounded.ChatBubbleOutline),
+    Map("Карта", "Map", Icons.Rounded.Map),
+    Settings("Настройки", "Settings", Icons.Rounded.Settings),
 }
 
 @Composable fun MeshifyApp(
@@ -61,6 +61,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     onAddChannel: (Int, String, String) -> Unit,
     onMonetChanged: (Boolean) -> Unit,
     onDarkModeChanged: (Boolean) -> Unit,
+    onLanguageChanged: (String) -> Unit,
     onSetNodeName: (String) -> Unit,
     onSendSelfAdvert: (Boolean) -> Unit,
     onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit,
@@ -73,6 +74,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
         dark -> meshifyDarkColorScheme()
         else -> meshifyLightColorScheme()
     }
+    CompositionLocalProvider(LocalLanguageTag provides state.theme.languageTag) {
     MaterialTheme(colorScheme = colorScheme) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             val destination = when {
@@ -108,7 +110,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
                     )
                     }
                     AppDestination.Home -> {
-                    ConnectedShell(state, onDisconnect, onClearDebugLog, showDebugLog, { showDebugLog = it }, onOpenChat, onOpenChannel, onAddChannel, onMonetChanged, onDarkModeChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings)
+                    ConnectedShell(state, onDisconnect, onClearDebugLog, showDebugLog, { showDebugLog = it }, onOpenChat, onOpenChannel, onAddChannel, onMonetChanged, onDarkModeChanged, onLanguageChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings)
                     }
                     AppDestination.Scanner -> {
                     ScannerScreen(state, onRequestPermissions, onToggleScan, onConnect, onConnectByAddress, onRemoveRecentMac, { showDebugLog = true })
@@ -117,6 +119,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
             }
         }
         if (showDebugLog) DebugLogDialog(state.debugLog) { showDebugLog = false }
+    }
     }
 }
 
@@ -130,7 +133,7 @@ private sealed interface AppDestination {
 // ── Connected shell with tabs ──────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ConnectedShell(state: MeshUiState, onDisconnect: () -> Unit, onClearDebugLog: () -> Unit, showDebugLog: Boolean, setShowDebug: (Boolean) -> Unit, onOpenChat: (Contact) -> Unit, onOpenChannel: (Channel) -> Unit, onAddChannel: (Int, String, String) -> Unit, onMonetChanged: (Boolean) -> Unit, onDarkModeChanged: (Boolean) -> Unit, onSetNodeName: (String) -> Unit, onSendSelfAdvert: (Boolean) -> Unit, onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit) {
+@Composable private fun ConnectedShell(state: MeshUiState, onDisconnect: () -> Unit, onClearDebugLog: () -> Unit, showDebugLog: Boolean, setShowDebug: (Boolean) -> Unit, onOpenChat: (Contact) -> Unit, onOpenChannel: (Channel) -> Unit, onAddChannel: (Int, String, String) -> Unit, onMonetChanged: (Boolean) -> Unit, onDarkModeChanged: (Boolean) -> Unit, onLanguageChanged: (String) -> Unit, onSetNodeName: (String) -> Unit, onSendSelfAdvert: (Boolean) -> Unit, onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     BackHandler(enabled = tab != 0) { tab = 0 }
     Scaffold(
@@ -154,7 +157,7 @@ private sealed interface AppDestination {
                         selected = tab == i,
                         onClick = { tab = i },
                         icon = { BadgedBox(badge = { if (unread > 0) Badge { Text(unreadBadgeText(unread)) } }) { Icon(t.icon, null) } },
-                        label = { Text(t.label, maxLines = 1) },
+                        label = { Text(uiText(t.russianLabel, t.englishLabel), maxLines = 1) },
                         alwaysShowLabel = false,
                     )
                 }
@@ -176,7 +179,7 @@ private sealed interface AppDestination {
                 Tab.Channels -> ChannelsTab(state, onOpenChannel, onAddChannel)
                 Tab.Messages -> MessagesTab(state, onOpenChat)
                 Tab.Map -> MapTab()
-                Tab.Settings -> SettingsTab(state, onDisconnect, onClearDebugLog, { setShowDebug(true) }, onMonetChanged, onDarkModeChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings)
+                Tab.Settings -> SettingsTab(state, onDisconnect, onClearDebugLog, { setShowDebug(true) }, onMonetChanged, onDarkModeChanged, onLanguageChanged, onSetNodeName, onSendSelfAdvert, onSetRadioSettings)
             }
         }
     }

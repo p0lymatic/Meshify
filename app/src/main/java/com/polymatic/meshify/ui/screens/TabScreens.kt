@@ -28,6 +28,7 @@ import com.polymatic.meshify.mesh.Channel
 import com.polymatic.meshify.mesh.Contact
 import com.polymatic.meshify.mesh.NodeInfo
 import com.polymatic.meshify.ui.MeshUiState
+import com.polymatic.meshify.ui.uiText
 import kotlinx.coroutines.launch
 
 // ── Stub tabs ──────────────────────────────────────────────────────────────
@@ -302,6 +303,7 @@ fun SettingsTab(
     onShowDebugLog: () -> Unit,
     onMonetChanged: (Boolean) -> Unit,
     onDarkModeChanged: (Boolean) -> Unit,
+    onLanguageChanged: (String) -> Unit,
     onSetNodeName: (String) -> Unit,
     onSendSelfAdvert: (Boolean) -> Unit,
     onSetRadioSettings: (Int, Int, Int, Int, Int) -> Unit,
@@ -311,27 +313,47 @@ fun SettingsTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { SectionHeader("Нода") }
+        item { SectionHeader(uiText("Нода", "Node")) }
         item { NodeInfoCard(state.node, onSetNodeName, onSendSelfAdvert, onSetRadioSettings) }
-        item { SectionHeader("Оформление") }
-        item { ThemeCard(state.theme.useMonet, state.theme.darkMode, onMonetChanged, onDarkModeChanged) }
-        item { SectionHeader("Подключение") }
+        item { SectionHeader(uiText("Оформление", "Appearance")) }
+        item { ThemeCard(state.theme.useMonet, state.theme.darkMode, state.theme.languageTag, onMonetChanged, onDarkModeChanged, onLanguageChanged) }
+        item { SectionHeader(uiText("Подключение", "Connection")) }
         item { ConnectionCard(state, onDisconnect) }
-        item { SectionHeader("Отладка") }
+        item { SectionHeader(uiText("Отладка", "Debug")) }
         item { DebugCard(state.debugLog.size, onShowDebugLog, onClearDebugLog) }
-        item { SectionHeader("О приложении") }
+        item { SectionHeader(uiText("О приложении", "About")) }
         item { AboutCard() }
         item { Spacer(Modifier.height(32.dp)) }
     }
 }
 
 @Composable
-private fun ThemeCard(useMonet: Boolean, darkMode: Boolean, onMonetChanged: (Boolean) -> Unit, onDarkModeChanged: (Boolean) -> Unit) {
+private fun ThemeCard(useMonet: Boolean, darkMode: Boolean, languageTag: String, onMonetChanged: (Boolean) -> Unit, onDarkModeChanged: (Boolean) -> Unit, onLanguageChanged: (String) -> Unit) {
     ElevatedCard(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 16.dp, bottomEnd = 28.dp, bottomStart = 16.dp)) {
         Column(Modifier.fillMaxWidth().padding(10.dp)) {
-            ThemeSwitchRow(Icons.Rounded.Palette, "Цвета Monet", "Использовать цвета обоев телефона", useMonet, onMonetChanged)
+            ThemeSwitchRow(Icons.Rounded.Palette, uiText("Цвета Monet", "Monet colors"), uiText("Использовать цвета обоев телефона", "Use colors from your phone wallpaper"), useMonet, onMonetChanged)
             HorizontalDivider(Modifier.padding(horizontal = 10.dp), color = MaterialTheme.colorScheme.outlineVariant)
-            ThemeSwitchRow(Icons.Rounded.DarkMode, "Тёмная тема", "Использовать тёмную палитру", darkMode, onDarkModeChanged)
+            ThemeSwitchRow(Icons.Rounded.DarkMode, uiText("Тёмная тема", "Dark mode"), uiText("Использовать тёмную палитру", "Use the dark surface palette"), darkMode, onDarkModeChanged)
+            HorizontalDivider(Modifier.padding(horizontal = 10.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            LanguageRow(languageTag, onLanguageChanged)
+        }
+    }
+}
+
+@Composable
+private fun LanguageRow(languageTag: String, onLanguageChanged: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton(onClick = {}, modifier = Modifier.size(42.dp)) { Icon(Icons.Rounded.Language, null, Modifier.size(20.dp)) }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(uiText("Язык", "Language"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(uiText("Язык интерфейса приложения", "Application interface language"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(selected = languageTag == "ru", onClick = { onLanguageChanged("ru") }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Русский") }
+            SegmentedButton(selected = languageTag == "en", onClick = { onLanguageChanged("en") }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("English") }
         }
     }
 }

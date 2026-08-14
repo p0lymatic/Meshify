@@ -22,6 +22,7 @@ data class RecentMac(val address: String, val name: String, val timestamp: Long)
 data class AppThemeSettings(
     val useMonet: Boolean = false,
     val darkMode: Boolean = false,
+    val languageTag: String = "ru",
 )
 
 data class MeshUiState(
@@ -102,6 +103,12 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     fun setDarkModeEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_DARK_MODE, enabled).apply()
         _state.update { it.copy(theme = it.theme.copy(darkMode = enabled)) }
+    }
+
+    fun setLanguage(languageTag: String) {
+        val normalized = languageTag.takeIf { it in supportedLanguageTags } ?: DEFAULT_LANGUAGE_TAG
+        prefs.edit().putString(PREF_LANGUAGE, normalized).apply()
+        _state.update { it.copy(theme = it.theme.copy(languageTag = normalized)) }
     }
 
     fun setNodeName(name: String) {
@@ -332,6 +339,9 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     private fun loadThemeSettings() = AppThemeSettings(
         useMonet = prefs.getBoolean(PREF_USE_MONET, false),
         darkMode = prefs.getBoolean(PREF_DARK_MODE, false),
+        languageTag = prefs.getString(PREF_LANGUAGE, DEFAULT_LANGUAGE_TAG)
+            ?.takeIf { it in supportedLanguageTags }
+            ?: DEFAULT_LANGUAGE_TAG,
     )
 
     // ── Protocol ───────────────────────────────────────────────────────────
@@ -722,6 +732,9 @@ class MeshifyViewModel(application: Application) : AndroidViewModel(application)
     private companion object {
         const val PREF_USE_MONET = "use_monet"
         const val PREF_DARK_MODE = "dark_mode"
+        const val PREF_LANGUAGE = "language"
+        const val DEFAULT_LANGUAGE_TAG = "ru"
+        val supportedLanguageTags = setOf("ru", "en")
         const val CONTACT_SYNC_TIMEOUT_MS = 20_000L
         const val QUEUE_SYNC_TIMEOUT_MS = 5_000L
         const val MAX_DIRECT_RETRIES = 3
